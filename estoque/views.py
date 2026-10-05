@@ -1,5 +1,5 @@
-from django.http import HttpResponse
+from django.shortcuts import render
 
 
 def inicio(request):
-    return HttpResponse("Sistema AgroEstoque - Da Roça Inteligente")
+    return render(request, 'index.html')
