@@ -1,6 +1,6 @@
 # Da Roça Inteligente – Sistema Inteligente de Gestão de Estoque com IA
 
-Projeto acadêmico desenvolvido no curso de **Análise e Desenvolvimento de Sistemas – UNIBALSAS**, na disciplina de **Big Data e Ciência de Dados**.
+Projeto acadêmico desenvolvido no curso de **Análise e Desenvolvimento de Sistemas – UNIBALSAS**, integrando conceitos de desenvolvimento web, análise de dados e apoio inteligente à gestão de estoque.
 
 ## Sobre o projeto
 
@@ -30,9 +30,6 @@ O MVP prevê um sistema capaz de:
 ## Base de dados
 
 Foi selecionado o **Retail Store Inventory Forecasting Dataset**, disponibilizado no Kaggle.
-
-Fonte:  
-https://www.kaggle.com/datasets/anirudhchauhan/retail-store-inventory-forecasting-dataset
 
 A base utilizada possui **73.100 registros e 15 variáveis**, relacionadas a produtos, estoque, vendas, demanda, preços, descontos, promoções e outros fatores.
 
@@ -87,16 +84,63 @@ Como `Demand Forecast` representa uma quantidade prevista de demanda, os valores
 
 Os possíveis valores extremos foram analisados antes de qualquer decisão de tratamento, evitando exclusões automáticas sem justificativa.
 
-A análise exploratória também permitiu investigar o comportamento das variáveis relacionadas a estoque, vendas e previsão de demanda, contribuindo para compreender como os dados poderão apoiar o futuro sistema inteligente.
+## Desenvolvimento da Interface da Aplicação
+
+Nesta etapa foi desenvolvida e organizada a interface web do **Sistema AgroEstoque**, seguindo a proposta definida para o projeto.
+
+A aplicação foi estruturada utilizando o framework **Django**, com separação entre configurações do projeto, aplicação de estoque, templates e arquivos estáticos.
+
+A interface desenvolvida contempla:
+
+- tela de acesso ao sistema;
+- dashboard com indicadores de estoque e movimentações;
+- visualização de produtos;
+- formulário demonstrativo para cadastro de produtos;
+- pesquisa de produtos;
+- identificação visual da situação do estoque;
+- registro demonstrativo de entradas e saídas;
+- histórico de movimentações;
+- recomendações de reposição;
+- justificativas para as recomendações apresentadas;
+- navegação responsiva para diferentes tamanhos de tela.
+
+Nesta versão acadêmica, parte das informações apresentadas na interface é demonstrativa e tem como objetivo validar a navegação, a organização visual e a experiência do usuário.
+
+## Arquitetura da aplicação
+
+O projeto utiliza uma estrutura baseada no padrão adotado pelo Django.
+
+O módulo `sistema_agroestoque` contém as configurações principais da aplicação, enquanto o módulo `estoque` concentra os componentes relacionados ao gerenciamento de estoque.
+
+A interface está armazenada na pasta de templates e é renderizada pelo Django por meio da view inicial da aplicação.
 
 ## Organização do repositório
 
 ```text
 sistema-agroestoque/
 ├── README.md
-├── docs/
-│   ├── documentos da TED 01
-│   └── TED02_Documento_Tecnico.pdf
+├── requirements.txt
+├── .gitignore
+├── manage.py
+├── sistema_agroestoque/
+│   ├── __init__.py
+│   ├── settings.py
+│   ├── urls.py
+│   ├── asgi.py
+│   └── wsgi.py
+├── estoque/
+│   ├── migrations/
+│   │   └── __init__.py
+│   ├── templates/
+│   │   └── index.html
+│   ├── static/
+│   ├── __init__.py
+│   ├── admin.py
+│   ├── apps.py
+│   ├── models.py
+│   ├── urls.py
+│   ├── views.py
+│   └── tests.py
 ├── data/
 │   ├── raw/
 │   │   └── retail_store_inventory.csv
@@ -105,11 +149,85 @@ sistema-agroestoque/
 ├── notebooks/
 │   └── TED02/
 │       └── TED02_limpeza_eda.ipynb
-├── .gitignore
+├── docs/
 └── index.html
 ```
 
-## Reprodutibilidade
+## Tecnologias utilizadas
+
+- Python
+- Django
+- SQLite
+- HTML5
+- CSS3
+- JavaScript
+- Pandas
+- NumPy
+- Matplotlib
+- Jupyter Notebook
+- Git
+- GitHub
+
+## Instalação
+
+Para executar o projeto localmente, é necessário possuir o **Python** instalado.
+
+Clone o repositório:
+
+```bash
+git clone https://github.com/pedroigor-instaplayer/sistema-agroestoque.git
+```
+
+Entre na pasta do projeto:
+
+```bash
+cd sistema-agroestoque
+```
+
+Instale as dependências:
+
+```bash
+pip install -r requirements.txt
+```
+
+## Execução da aplicação
+
+Com as dependências instaladas, execute:
+
+```bash
+python manage.py migrate
+```
+
+Em seguida:
+
+```bash
+python manage.py runserver
+```
+
+O Django iniciará o servidor de desenvolvimento. A aplicação poderá ser acessada pelo endereço informado no terminal, normalmente:
+
+```text
+http://127.0.0.1:8000/
+```
+
+## Utilização da aplicação
+
+Ao acessar a aplicação, será apresentada a tela inicial do **AgroEstoque**.
+
+Na versão demonstrativa da interface, o usuário pode:
+
+1. acessar o sistema pela tela de entrada;
+2. visualizar os principais indicadores no dashboard;
+3. navegar até a área de produtos;
+4. pesquisar e visualizar produtos;
+5. abrir o formulário demonstrativo de cadastro;
+6. acessar a área de movimentações;
+7. simular entradas e saídas de estoque;
+8. consultar recomendações de reposição.
+
+Os dados exibidos na interface são utilizados para demonstração e validação do MVP acadêmico.
+
+## Reprodutibilidade da análise de dados
 
 A base original utilizada no projeto está disponível em:
 
@@ -123,23 +241,9 @@ O código utilizado para limpeza, preparação, estatísticas e análise explora
 
 `notebooks/TED02/TED02_limpeza_eda.ipynb`
 
-O Documento Técnico – Versão 2.0 está disponível em:
+## Histórico de desenvolvimento
 
-`docs/TED02_Documento_Tecnico.pdf`
-
-## Tecnologias utilizadas
-
-- Python
-- Pandas
-- NumPy
-- Matplotlib
-- Jupyter Notebook
-- Django
-- SQLite
-- HTML
-- CSS
-- JavaScript
-- Git e GitHub
+O histórico de commits do repositório registra a evolução do projeto, incluindo a preparação dos dados, documentação, organização da estrutura Django e implementação da interface.
 
 ## Integrantes
 
