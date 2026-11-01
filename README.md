@@ -84,178 +84,215 @@ Como `Demand Forecast` representa uma quantidade prevista de demanda, os valores
 
 Os possíveis valores extremos foram analisados antes de qualquer decisão de tratamento, evitando exclusões automáticas sem justificativa.
 
-## Desenvolvimento da Interface da Aplicação
+## TED 03 e TED 04 – Back-end, integração e versão final
 
-Nesta etapa foi desenvolvida e organizada a interface web do **Sistema AgroEstoque**, seguindo a proposta definida para o projeto.
+Nestas etapas o protótipo visual foi transformado em uma **aplicação web funcional**: o back-end em **Flask** implementa as regras de negócio, a persistência em banco de dados, a autenticação/autorização e uma API REST documentada, e a interface consome essa API (não há mais dados fictícios).
 
-A aplicação foi estruturada utilizando o framework **Django**, com separação entre configurações do projeto, aplicação de estoque, templates e arquivos estáticos.
+> **Mudança em relação ao planejamento (TED 1/2):** o planejamento previa Django; o back-end foi implementado em **Flask**, por ser mais leve, simples de executar em qualquer máquina e de publicar. A justificativa completa consta no Documento Técnico v3.0.
 
-A interface desenvolvida contempla:
+### Funcionalidades implementadas
 
-- tela de acesso ao sistema;
-- dashboard com indicadores de estoque e movimentações;
-- visualização de produtos;
-- formulário demonstrativo para cadastro de produtos;
-- pesquisa de produtos;
-- identificação visual da situação do estoque;
-- registro demonstrativo de entradas e saídas;
-- histórico de movimentações;
-- recomendações de reposição;
-- justificativas para as recomendações apresentadas;
-- navegação responsiva para diferentes tamanhos de tela.
+- **Autenticação** por e-mail/senha com token assinado (Bearer, 8 h), senhas com hash PBKDF2-SHA256 e bloqueio temporário após 5 tentativas inválidas;
+- **Autorização por perfil**: `OPERADOR`, `GESTOR` e `ADMINISTRADOR`, e tela de **gestão de usuários** (administrador);
+- **Produtos**: cadastro, edição, desativação lógica, busca sem distinção de acentos, filtro por situação e paginação;
+- **Movimentações de estoque** (entrada e saída) com saldo atualizado de forma atômica, bloqueio de saída acima do saldo e livro imutável (garantido também por triggers no banco);
+- **Recomendações de reposição explicáveis**: previsão de demanda por média ponderada, cobertura em dias, ponto de pedido, quantidade sugerida e justificativa em português; o gestor aceita ou ignora cada sugestão;
+- **Dashboard** com indicadores reais (produtos, estoque baixo, vendas e faturamento do mês, saídas dos últimos 7 dias, mais vendidos, itens que exigem ação);
+- **Fornecedores e categorias** (o prazo de entrega do fornecedor alimenta a previsão);
+- **Documentação interativa da API** (Swagger UI) e coleção Postman;
+- **Importação da base da TED 02** (73 mil registros) para o banco.
 
-Nesta versão acadêmica, parte das informações apresentadas na interface é demonstrativa e tem como objetivo validar a navegação, a organização visual e a experiência do usuário.
+### Arquitetura
 
-## Arquitetura da aplicação
+```text
+ Navegador (HTML/CSS/JS)  ──HTTP/JSON + Bearer──►  Flask: Blueprint /api  (agroestoque/api.py)
+                                                        │
+                                  regras de negócio ◄───┤  agroestoque/servicos.py
+                                  motor de análise  ◄───┤  agroestoque/analise.py (Python puro)
+                                                        ▼
+                                            sqlite3 ──► SQLite (instance/agroestoque.sqlite3)
+```
 
-O projeto utiliza uma estrutura baseada no padrão adotado pelo Django.
+| Camada | Arquivos | Responsabilidade |
+|---|---|---|
+| Apresentação | `agroestoque/templates`, `agroestoque/static` | Interface (SPA em JavaScript puro) |
+| API | `agroestoque/api.py`, `auth.py`, `validacao.py`, `erros.py` | Rotas, autenticação, autorização, validação, erros padronizados |
+| Serviços | `agroestoque/servicos.py` | Regras de negócio e transações |
+| Análise | `agroestoque/analise.py` | Previsão de demanda e classificação de risco |
+| Persistência | `database/schema.sql`, `agroestoque/db.py` | Esquema, restrições, transações |
 
-O módulo `sistema_agroestoque` contém as configurações principais da aplicação, enquanto o módulo `estoque` concentra os componentes relacionados ao gerenciamento de estoque.
+### Modelo de dados
 
-A interface está armazenada na pasta de templates e é renderizada pelo Django por meio da view inicial da aplicação.
+`categoria 1─N produto N─1 fornecedor` · `produto 1─N movimentacao N─1 usuario` · `produto 1─N recomendacao`.
+Script de criação em [`database/schema.sql`](database/schema.sql); consultas de auditoria em [`database/consultas_uteis.sql`](database/consultas_uteis.sql). Datas ficam em UTC e valores monetários em centavos (inteiros), evitando erros de arredondamento.
+
+### Regras de negócio principais
+
+1. O saldo do produto só muda por movimentações (nunca por edição direta).
+2. Saída não pode exceder o saldo disponível (HTTP 422 `ESTOQUE_INSUFICIENTE`).
+3. O motivo precisa ser compatível com o tipo (ex.: `VENDA` só em saída) — validado na API **e** no banco.
+4. Produtos inativos não podem ser movimentados; a exclusão é lógica para preservar o histórico.
+5. Movimentações são imutáveis; correções são feitas por novas movimentações.
+6. Classificação de risco: **crítico** (sem estoque, saldo ≤ mínimo, ou cobertura menor que o prazo de entrega) e **atenção** (saldo ≤ 1,5 × mínimo ou ≤ ponto de pedido).
+7. Demanda diária prevista = 60 % da média dos últimos 14 dias + 40 % da média dos últimos 30 dias (somente vendas).
+8. Quantidade sugerida = demanda × (prazo de entrega + 15 dias) + estoque mínimo − saldo.
+
+### Perfis de acesso
+
+| Ação | Operador | Gestor | Administrador |
+|---|:-:|:-:|:-:|
+| Consultar produtos, dashboard, movimentações e recomendações | ✔ | ✔ | ✔ |
+| Registrar movimentações | ✔ | ✔ | ✔ |
+| Cadastrar/editar/desativar produtos, categorias, fornecedores | ✖ | ✔ | ✔ |
+| Gerar análise e aceitar/ignorar recomendações | ✖ | ✔ | ✔ |
+| Gerenciar usuários | ✖ | ✖ | ✔ |
+
+## Como executar em localhost
+
+Pré-requisito: **Python 3.10 ou superior**.
+
+```bash
+# 1) ambiente virtual
+python -m venv .venv
+.venv\Scripts\Activate.ps1          # Windows (PowerShell)
+# source .venv/bin/activate         # Linux / macOS
+
+# 2) dependências
+pip install -r requirements.txt
+
+# 3) carregar dados de demonstração (cria o banco, usuários, produtos e 60 dias de vendas)
+flask --app agroestoque seed-demo
+
+# 4) iniciar o servidor
+python run.py
+```
+
+Acesse **http://127.0.0.1:5000/**. (Alternativa ao passo 4: `flask --app agroestoque run --debug`.)
+
+Usuários de demonstração (senha `Agro@2026`; altere com `seed-demo --senha`):
+
+| E-mail | Perfil |
+|---|---|
+| `gestor@daroca.com.br` | Gestor |
+| `operador@daroca.com.br` | Operador |
+| `admin@daroca.com.br` | Administrador (vê a aba **Usuários**) |
+
+> A senha de demonstração é apenas para ambiente acadêmico. Em produção, crie usuários próprios (veja abaixo).
+
+O banco SQLite é criado automaticamente em `instance/agroestoque.sqlite3` na primeira execução. Para recomeçar do zero, apague a pasta `instance/` ou use `seed-demo --limpar`.
+
+### Comandos úteis
+
+| Comando | O que faz |
+|---|---|
+| `flask --app agroestoque init-db` | Cria as tabelas (se não existirem) |
+| `flask --app agroestoque seed-demo [--limpar] [--senha X]` | Carrega a demonstração |
+| `flask --app agroestoque criar-usuario` | Cria um usuário (pergunta nome, e-mail, perfil e senha) |
+| `flask --app agroestoque importar-base --dias 90 --loja S001` | Importa a base da TED 02 (`--limpar` reimporta) |
+
+Na base importada o estoque cobre poucos dias de venda (característica da base sintética), então muitos itens aparecem como críticos — comportamento esperado.
+
+### Testes automatizados
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+São 72 testes: motor de análise, autenticação, autorização por perfil, validações, regras de estoque, recomendações, dashboard e segurança.
+
+### Documentação da API
+
+- Swagger UI: **http://127.0.0.1:5000/api-docs** (carrega o Swagger UI por CDN; requer internet)
+- Especificação OpenAPI: [`docs/api/openapi.yaml`](docs/api/openapi.yaml)
+- Coleção Postman/Insomnia: [`docs/api/AgroEstoque.postman_collection.json`](docs/api/AgroEstoque.postman_collection.json) (importe, execute o login e o token é salvo automaticamente). Para regenerá-la após mudar o OpenAPI: `python scripts/gerar_postman.py` (requer `pip install pyyaml`).
+
+Exemplo rápido com `curl`:
+
+```bash
+TOKEN=$(curl -s -X POST http://127.0.0.1:5000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"gestor@daroca.com.br","senha":"Agro@2026"}' | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:5000/api/dashboard
+```
+
+| Método e rota | Descrição |
+|---|---|
+| `POST /api/auth/login` · `GET /api/auth/me` · `POST /api/auth/alterar-senha` | Autenticação |
+| `GET/POST /api/usuarios` · `PATCH /api/usuarios/{id}` | Usuários (administrador) |
+| `GET/POST /api/produtos` · `GET/PUT/PATCH/DELETE /api/produtos/{id}` | Produtos |
+| `GET /api/produtos/{id}/analise` | Análise detalhada de reposição |
+| `GET/POST /api/movimentacoes` | Entradas e saídas |
+| `GET /api/dashboard` | Indicadores |
+| `GET /api/recomendacoes` · `POST /api/recomendacoes/gerar` · `POST /api/recomendacoes/{id}/decidir` | Recomendações |
+| `GET/POST /api/categorias` · `GET/POST /api/fornecedores` · `GET/PUT/DELETE /api/fornecedores/{id}` | Cadastros auxiliares |
+| `GET /api/saude` | Verificação de disponibilidade |
+
+Todos os erros seguem o formato `{"erro": {"codigo": "...", "mensagem": "...", "detalhes": {}}}`.
+
+## Publicação na web (depois do localhost)
+
+```bash
+pip install -r requirements-deploy.txt
+export AGROESTOQUE_PRODUCAO=1
+export AGROESTOQUE_SECRET_KEY="<valor longo e aleatório>"      # obrigatório em produção
+export AGROESTOQUE_DATABASE=/caminho/persistente/agroestoque.sqlite3
+flask --app agroestoque init-db
+flask --app agroestoque criar-usuario                          # primeiro administrador
+gunicorn wsgi:app --bind 0.0.0.0:$PORT
+```
+
+| Variável | Uso |
+|---|---|
+| `AGROESTOQUE_PRODUCAO` | `1` exige `AGROESTOQUE_SECRET_KEY` (recusa subir sem ela) |
+| `AGROESTOQUE_SECRET_KEY` | Chave que assina os tokens |
+| `AGROESTOQUE_DATABASE` | Caminho do arquivo SQLite (use um disco **persistente**) |
+| `HOST`, `PORT`, `FLASK_DEBUG` | Usadas por `python run.py` (padrão `127.0.0.1`, `5000`, `1`) |
+
+Observações para a hospedagem: use HTTPS (o token trafega no cabeçalho `Authorization`); escolha um serviço que ofereça disco persistente, pois o SQLite é um arquivo; mantenha **um único processo/worker** do gunicorn (ou migre para PostgreSQL) porque o bloqueio de tentativas de login fica em memória.
 
 ## Organização do repositório
 
 ```text
 sistema-agroestoque/
 ├── README.md
-├── requirements.txt
-├── .gitignore
-├── manage.py
-├── sistema_agroestoque/
-│   ├── __init__.py
-│   ├── settings.py
-│   ├── urls.py
-│   ├── asgi.py
-│   └── wsgi.py
-├── estoque/
-│   ├── migrations/
-│   │   └── __init__.py
-│   ├── templates/
-│   │   └── index.html
-│   ├── static/
-│   ├── __init__.py
-│   ├── admin.py
-│   ├── apps.py
-│   ├── models.py
-│   ├── urls.py
-│   ├── views.py
-│   └── tests.py
-├── data/
-│   ├── raw/
-│   │   └── retail_store_inventory.csv
-│   └── processed/
-│       └── retail_store_inventory_processed.csv
-├── notebooks/
-│   └── TED02/
-│       └── TED02_limpeza_eda.ipynb
+├── run.py  wsgi.py             # servidor local e entrada WSGI
+├── requirements*.txt
+├── agroestoque/                # aplicação Flask
+│   ├── __init__.py             # fábrica create_app, erros e cabeçalhos
+│   ├── api.py  auth.py  servicos.py  analise.py  db.py
+│   ├── validacao.py  erros.py  serializers.py  util.py  cli.py  web.py  config.py
+│   ├── templates/              # index.html, swagger.html
+│   └── static/                 # app.css, app.js
+├── database/                   # schema.sql, consultas_uteis.sql
+├── tests/                      # test_analise.py, test_api.py
+├── scripts/gerar_postman.py
 ├── docs/
-└── index.html
+│   ├── api/                    # openapi.yaml, coleção Postman
+│   ├── prototipo/              # protótipo visual da etapa anterior
+│   └── *.pdf                   # documentos das TEDs 01 e 02
+├── data/                       # base bruta e tratada (TED 02)
+└── notebooks/TED02/
 ```
 
 ## Tecnologias utilizadas
 
-- Python
-- Django
-- SQLite
-- HTML5
-- CSS3
-- JavaScript
-- Pandas
-- NumPy
-- Matplotlib
-- Jupyter Notebook
-- Git
-- GitHub
+Python 3.10+ · Flask 3 · SQLite (`sqlite3`) · Werkzeug (hash de senhas) · itsdangerous (tokens assinados) · HTML5 · CSS3 · JavaScript (ES2020) · OpenAPI 3 / Swagger UI · Postman · Pandas, NumPy, Matplotlib e Jupyter (análise da TED 02) · Git e GitHub.
 
-## Instalação
+## Decisões técnicas
 
-Para executar o projeto localmente, é necessário possuir o **Python** instalado.
+- **Flask + `sqlite3` da biblioteca padrão**: poucas dependências (apenas o Flask), fácil de instalar e de auditar; as regras ficam em `servicos.py`, isoladas da camada HTTP. A migração para SQLAlchemy/PostgreSQL é possível sem alterar a API.
+- **Valores monetários em centavos (inteiro)** e datas em UTC: sem erros de arredondamento e sem ambiguidade de fuso.
+- **Token assinado (Bearer) em vez de cookie de sessão**: simplifica o uso por Swagger/Postman e elimina o risco de CSRF na API. Os tokens expiram em 8 h e são invalidados quando a senha muda.
+- **Motor de análise em Python puro**: previsão estatística explicável, sem "caixa-preta"; pode evoluir para modelos de aprendizado de máquina com a base da TED 02.
+- **Defesa em profundidade**: as principais regras (saldo não negativo, motivo × tipo, imutabilidade do livro) são garantidas também por `CHECK` e triggers no banco.
 
-Clone o repositório:
+## Limitações conhecidas
 
-```bash
-git clone https://github.com/pedroigor-instaplayer/sistema-agroestoque.git
-```
+- O bloqueio de login usa memória do processo; com vários processos, use Redis ou outro armazenamento compartilhado.
+- O Swagger UI é carregado por CDN (necessita internet).
+- A seleção de produto na tela de movimentações lista até 100 itens.
 
-Entre na pasta do projeto:
+## Equipe e contexto
 
-```bash
-cd sistema-agroestoque
-```
-
-Instale as dependências:
-
-```bash
-pip install -r requirements.txt
-```
-
-## Execução da aplicação
-
-Com as dependências instaladas, execute:
-
-```bash
-python manage.py migrate
-```
-
-Em seguida:
-
-```bash
-python manage.py runserver
-```
-
-O Django iniciará o servidor de desenvolvimento. A aplicação poderá ser acessada pelo endereço informado no terminal, normalmente:
-
-```text
-http://127.0.0.1:8000/
-```
-
-## Utilização da aplicação
-
-Ao acessar a aplicação, será apresentada a tela inicial do **AgroEstoque**.
-
-Na versão demonstrativa da interface, o usuário pode:
-
-1. acessar o sistema pela tela de entrada;
-2. visualizar os principais indicadores no dashboard;
-3. navegar até a área de produtos;
-4. pesquisar e visualizar produtos;
-5. abrir o formulário demonstrativo de cadastro;
-6. acessar a área de movimentações;
-7. simular entradas e saídas de estoque;
-8. consultar recomendações de reposição.
-
-Os dados exibidos na interface são utilizados para demonstração e validação do MVP acadêmico.
-
-## Reprodutibilidade da análise de dados
-
-A base original utilizada no projeto está disponível em:
-
-`data/raw/retail_store_inventory.csv`
-
-A versão preparada após o processo de limpeza está disponível em:
-
-`data/processed/retail_store_inventory_processed.csv`
-
-O código utilizado para limpeza, preparação, estatísticas e análise exploratória está disponível em:
-
-`notebooks/TED02/TED02_limpeza_eda.ipynb`
-
-## Histórico de desenvolvimento
-
-O histórico de commits do repositório registra a evolução do projeto, incluindo a preparação dos dados, documentação, organização da estrutura Django e implementação da interface.
-
-## Integrantes
-
-- André Rocha Figueredo
-- Michel Guido Teixeira
-- Mickael Sousa Miranda
-- Pedro Igor Ferreira de Carvalho
-- Dhonantan dos Santos Anchieta Junior
-
-## Instituição
-
-**Centro Universitário de Balsas – UNIBALSAS**  
-Curso de Análise e Desenvolvimento de Sistemas  
-Balsas – MA  
-2026
+Projeto da disciplina de projeto integrador – ADS/UNIBALSAS, em parceria com a Da Roça Agropecuária & Pet.

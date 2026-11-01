@@ -1,0 +1,765 @@
+openapi: 3.0.3
+info:
+  title: AgroEstoque API
+  version: "3.0"
+  description: |
+    API REST do sistema **AgroEstoque** (Da Roça Agropecuária & Pet).
+
+    **Autenticação:** faça `POST /api/auth/login` e envie o token retornado no
+    cabeçalho `Authorization: Bearer <token>` (validade de 8 horas).
+
+    **Perfis de acesso:**
+    | Perfil | Permissões |
+    |---|---|
+    | OPERADOR | Consultar tudo e registrar movimentações |
+    | GESTOR | Operador + cadastrar/editar produtos, categorias, fornecedores e decidir recomendações |
+    | ADMINISTRADOR | Gestor + gestão de usuários (`/api/usuarios`) |
+
+    **Erros:** todas as falhas retornam `{"erro": {"codigo", "mensagem", "detalhes"}}`.
+servers:
+  - url: http://127.0.0.1:5000
+    description: Desenvolvimento local (Flask)
+tags:
+  - name: Sistema
+  - name: Autenticação
+  - name: Usuários
+  - name: Produtos
+  - name: Movimentações
+  - name: Recomendações
+  - name: Dashboard
+  - name: Cadastros auxiliares
+security:
+  - bearerAuth: []
+paths:
+  /api/saude:
+    get:
+      tags: [Sistema]
+      summary: Verifica se a API está no ar
+      security: []
+      responses:
+        "200":
+          description: API disponível
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string, example: ok}
+                  servico: {type: string, example: AgroEstoque API}
+                  versao: {type: string, example: "3.0"}
+  /api/auth/login:
+    post:
+      tags: [Autenticação]
+      summary: Autentica o usuário e retorna um token Bearer
+      description: Após 5 tentativas inválidas para o mesmo e-mail, o acesso é bloqueado por 15 minutos (HTTP 429).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LoginRequest"}
+            example: {email: gestor@daroca.com.br, senha: Agro@2026}
+      responses:
+        "200":
+          description: Login realizado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LoginResponse"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
+        "429":
+          description: Muitas tentativas de login
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Erro"}
+  /api/auth/me:
+    get:
+      tags: [Autenticação]
+      summary: Dados do usuário autenticado
+      responses:
+        "200":
+          description: Usuário atual
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Usuario"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
+  /api/auth/alterar-senha:
+    post:
+      tags: [Autenticação]
+      summary: Altera a senha do usuário autenticado
+      description: Tokens emitidos antes da troca deixam de valer; faça login novamente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [senha_atual, nova_senha]
+              properties:
+                senha_atual: {type: string, format: password}
+                nova_senha: {type: string, format: password, minLength: 8}
+      responses:
+        "200":
+          description: Senha alterada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mensagem: {type: string}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
+  /api/usuarios:
+    get:
+      tags: [Usuários]
+      summary: Lista usuários (ADMINISTRADOR)
+      responses:
+        "200":
+          description: Usuários
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Usuario"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+    post:
+      tags: [Usuários]
+      summary: Cria usuário (ADMINISTRADOR)
+      description: A senha precisa ter 8+ caracteres, não pode ser só numérica nem muito comum.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/UsuarioEntrada"}
+            example: {nome: Maria Souza, email: maria@daroca.com.br, senha: Maria#2026, papel: GESTOR}
+      responses:
+        "201":
+          description: Usuário criado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Usuario"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+  /api/usuarios/{id}:
+    parameters:
+      - {$ref: "#/components/parameters/Id"}
+    patch:
+      tags: [Usuários]
+      summary: Atualiza nome, perfil, situação ou senha (ADMINISTRADOR)
+      description: O administrador não pode desativar nem alterar o perfil do próprio usuário (422 AUTO_ALTERACAO).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome: {type: string}
+                papel: {type: string, enum: [ADMINISTRADOR, GESTOR, OPERADOR]}
+                ativo: {type: boolean}
+                senha: {type: string, format: password}
+            example: {ativo: false}
+      responses:
+        "200":
+          description: Usuário atualizado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Usuario"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+        "422":
+          description: Regra de negócio violada
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Erro"}
+  /api/produtos:
+    get:
+      tags: [Produtos]
+      summary: Lista produtos (com busca, filtros e paginação)
+      parameters:
+        - {name: q, in: query, schema: {type: string}, description: "Busca por nome, SKU ou categoria"}
+        - {name: categoria, in: query, schema: {type: string}, description: "Nome exato da categoria"}
+        - name: situacao
+          in: query
+          schema: {type: string, enum: [CRITICO, ATENCAO, NORMAL]}
+        - {name: ativo, in: query, schema: {type: string, enum: ["true", "false", "all"], default: "true"}}
+        - {$ref: "#/components/parameters/Page"}
+        - {$ref: "#/components/parameters/PageSize"}
+      responses:
+        "200":
+          description: Página de produtos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: "#/components/schemas/Pagina"}
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: {$ref: "#/components/schemas/Produto"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
+    post:
+      tags: [Produtos]
+      summary: Cadastra produto (GESTOR/ADMINISTRADOR)
+      description: A categoria é criada automaticamente se não existir. Se `quantidade_atual` > 0, registra uma movimentação de ESTOQUE_INICIAL.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProdutoEntrada"}
+            example:
+              nome: Ração Canina Premium 15 kg
+              categoria: Rações
+              preco_venda: "189,90"
+              quantidade_atual: 10
+              estoque_minimo: 8
+      responses:
+        "201":
+          description: Produto criado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Produto"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+  /api/produtos/{id}:
+    parameters:
+      - {$ref: "#/components/parameters/Id"}
+    get:
+      tags: [Produtos]
+      summary: Detalha um produto
+      responses:
+        "200":
+          description: Produto
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Produto"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+    put:
+      tags: [Produtos]
+      summary: Atualiza produto por completo (GESTOR/ADMINISTRADOR)
+      description: O saldo (`quantidade_atual`) nunca é alterado aqui; use movimentações.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProdutoEntrada"}
+      responses:
+        "200":
+          description: Produto atualizado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Produto"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+    patch:
+      tags: [Produtos]
+      summary: Atualiza produto parcialmente (GESTOR/ADMINISTRADOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/ProdutoEntrada"}
+            example: {estoque_minimo: 12}
+      responses:
+        "200":
+          description: Produto atualizado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Produto"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+    delete:
+      tags: [Produtos]
+      summary: Desativa produto (exclusão lógica; GESTOR/ADMINISTRADOR)
+      responses:
+        "200":
+          description: Produto desativado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Produto"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+  /api/produtos/{id}/analise:
+    parameters:
+      - {$ref: "#/components/parameters/Id"}
+    get:
+      tags: [Recomendações]
+      summary: Análise detalhada de reposição de um produto
+      description: Retorna demanda prevista, cobertura, ponto de pedido, quantidade sugerida e a série de vendas dos últimos 30 dias.
+      responses:
+        "200":
+          description: Análise do produto
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AnaliseProduto"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+  /api/movimentacoes:
+    get:
+      tags: [Movimentações]
+      summary: Lista movimentações (mais recentes primeiro)
+      parameters:
+        - {name: produto, in: query, schema: {type: integer}}
+        - {name: tipo, in: query, schema: {type: string, enum: [ENTRADA, SAIDA]}}
+        - {name: data_inicio, in: query, schema: {type: string, format: date}}
+        - {name: data_fim, in: query, schema: {type: string, format: date}}
+        - {$ref: "#/components/parameters/Page"}
+        - {$ref: "#/components/parameters/PageSize"}
+      responses:
+        "200":
+          description: Página de movimentações
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - {$ref: "#/components/schemas/Pagina"}
+                  - type: object
+                    properties:
+                      resultados:
+                        type: array
+                        items: {$ref: "#/components/schemas/Movimentacao"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+    post:
+      tags: [Movimentações]
+      summary: Registra entrada ou saída de estoque
+      description: |
+        Regras de negócio: produto ativo; quantidade ≥ 1; motivo compatível com o tipo;
+        **saída não pode exceder o saldo** (HTTP 422 `ESTOQUE_INSUFICIENTE`).
+        O saldo é atualizado atomicamente e as recomendações do produto são reavaliadas.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/MovimentacaoEntrada"}
+            example: {produto_id: 1, tipo: SAIDA, motivo: VENDA, quantidade: 2}
+      responses:
+        "201":
+          description: Movimentação registrada
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Movimentacao"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
+        "422":
+          description: Regra de negócio violada (ESTOQUE_INSUFICIENTE, MOTIVO_INCOMPATIVEL, PRODUTO_INATIVO...)
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Erro"}
+  /api/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Indicadores da visão geral
+      responses:
+        "200":
+          description: Indicadores
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Dashboard"}
+  /api/recomendacoes:
+    get:
+      tags: [Recomendações]
+      summary: Lista recomendações de reposição
+      parameters:
+        - name: status
+          in: query
+          schema: {type: string, enum: [PENDENTE, ACEITA, IGNORADA, EXPIRADA, TODAS], default: PENDENTE}
+      responses:
+        "200":
+          description: Recomendações ordenadas por risco
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: {type: integer}
+                  resultados:
+                    type: array
+                    items: {$ref: "#/components/schemas/Recomendacao"}
+  /api/recomendacoes/gerar:
+    post:
+      tags: [Recomendações]
+      summary: Reavalia todos os produtos ativos (GESTOR/ADMINISTRADOR)
+      responses:
+        "200":
+          description: Resultado da reavaliação
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  atualizadas: {type: integer}
+                  pendentes: {type: integer}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+  /api/recomendacoes/{id}/decidir:
+    parameters:
+      - {$ref: "#/components/parameters/Id"}
+    post:
+      tags: [Recomendações]
+      summary: Aceita ou ignora uma recomendação (GESTOR/ADMINISTRADOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: {type: string, enum: [ACEITA, IGNORADA]}
+      responses:
+        "200":
+          description: Recomendação atualizada
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Recomendacao"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+        "422":
+          description: Recomendação inexistente, já decidida ou status inválido
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Erro"}
+  /api/categorias:
+    get:
+      tags: [Cadastros auxiliares]
+      summary: Lista categorias
+      responses:
+        "200":
+          description: Categorias
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Categoria"}
+    post:
+      tags: [Cadastros auxiliares]
+      summary: Cria categoria (GESTOR/ADMINISTRADOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nome]
+              properties:
+                nome: {type: string, maxLength: 80}
+      responses:
+        "201":
+          description: Categoria criada
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Categoria"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+  /api/fornecedores:
+    get:
+      tags: [Cadastros auxiliares]
+      summary: Lista fornecedores
+      responses:
+        "200":
+          description: Fornecedores
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: "#/components/schemas/Fornecedor"}
+    post:
+      tags: [Cadastros auxiliares]
+      summary: Cria fornecedor (GESTOR/ADMINISTRADOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/FornecedorEntrada"}
+      responses:
+        "201":
+          description: Fornecedor criado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Fornecedor"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+  /api/fornecedores/{id}:
+    parameters:
+      - {$ref: "#/components/parameters/Id"}
+    get:
+      tags: [Cadastros auxiliares]
+      summary: Detalha fornecedor
+      responses:
+        "200":
+          description: Fornecedor
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Fornecedor"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+    put:
+      tags: [Cadastros auxiliares]
+      summary: Atualiza fornecedor (GESTOR/ADMINISTRADOR)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/FornecedorEntrada"}
+      responses:
+        "200":
+          description: Fornecedor atualizado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Fornecedor"}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+    delete:
+      tags: [Cadastros auxiliares]
+      summary: Desativa fornecedor (GESTOR/ADMINISTRADOR)
+      responses:
+        "200":
+          description: Fornecedor desativado
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Fornecedor"}
+        "403": {$ref: "#/components/responses/AcessoNegado"}
+        "404": {$ref: "#/components/responses/NaoEncontrado"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token obtido em /api/auth/login
+  parameters:
+    Id: {name: id, in: path, required: true, schema: {type: integer}}
+    Page: {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+    PageSize: {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100}}
+  responses:
+    DadosInvalidos:
+      description: Dados inválidos (DADOS_INVALIDOS, JSON_INVALIDO, PARAMETRO_INVALIDO)
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Erro"}
+          example: {erro: {codigo: DADOS_INVALIDOS, mensagem: Dados inválidos., detalhes: {preco_venda: ["Este campo é obrigatório."]}}}
+    NaoAutenticado:
+      description: Token ausente, inválido ou expirado
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Erro"}
+    AcessoNegado:
+      description: Perfil sem permissão (ACESSO_NEGADO)
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Erro"}
+    NaoEncontrado:
+      description: Recurso não encontrado
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Erro"}
+  schemas:
+    Erro:
+      type: object
+      properties:
+        erro:
+          type: object
+          properties:
+            codigo: {type: string, example: ESTOQUE_INSUFICIENTE}
+            mensagem: {type: string}
+            detalhes: {type: object, additionalProperties: true}
+    Pagina:
+      type: object
+      properties:
+        total: {type: integer}
+        pagina: {type: integer}
+        paginas: {type: integer}
+        tamanho_pagina: {type: integer}
+    LoginRequest:
+      type: object
+      required: [email, senha]
+      properties:
+        email: {type: string, description: "E-mail (ou nome de usuário)"}
+        senha: {type: string, format: password}
+    LoginResponse:
+      type: object
+      properties:
+        token: {type: string}
+        tipo: {type: string, example: Bearer}
+        expira_em_segundos: {type: integer, example: 28800}
+        usuario: {$ref: "#/components/schemas/Usuario"}
+    Usuario:
+      type: object
+      properties:
+        id: {type: integer}
+        username: {type: string}
+        email: {type: string}
+        nome: {type: string}
+        papel: {type: string, enum: [ADMINISTRADOR, GESTOR, OPERADOR]}
+        ativo: {type: boolean}
+    UsuarioEntrada:
+      type: object
+      required: [nome, email, senha]
+      properties:
+        nome: {type: string, maxLength: 120}
+        email: {type: string, format: email}
+        senha: {type: string, format: password, minLength: 8}
+        papel: {type: string, enum: [ADMINISTRADOR, GESTOR, OPERADOR], default: OPERADOR}
+    Categoria:
+      type: object
+      properties:
+        id: {type: integer}
+        nome: {type: string}
+    FornecedorEntrada:
+      type: object
+      required: [nome]
+      properties:
+        nome: {type: string, maxLength: 120}
+        telefone: {type: string}
+        email: {type: string}
+        prazo_entrega_dias: {type: integer, minimum: 1, default: 7}
+    Fornecedor:
+      allOf:
+        - {$ref: "#/components/schemas/FornecedorEntrada"}
+        - type: object
+          properties:
+            id: {type: integer}
+            ativo: {type: boolean}
+    ProdutoEntrada:
+      type: object
+      required: [nome, categoria, preco_venda]
+      properties:
+        nome: {type: string, maxLength: 150}
+        sku: {type: string, maxLength: 30, description: "Gerado automaticamente se omitido"}
+        categoria: {type: string, description: "Nome da categoria (criada se não existir)"}
+        unidade: {type: string, default: unidade}
+        preco_venda: {type: string, example: "189,90", description: "Aceita número ou texto (vírgula ou ponto)"}
+        quantidade_atual: {type: integer, minimum: 0, description: "Somente na criação"}
+        estoque_minimo: {type: integer, minimum: 0}
+        fornecedor_id: {type: integer, nullable: true}
+        ativo: {type: boolean, description: "Somente em PUT/PATCH"}
+    Produto:
+      type: object
+      properties:
+        id: {type: integer}
+        sku: {type: string}
+        nome: {type: string}
+        categoria: {type: string}
+        categoria_id: {type: integer}
+        unidade: {type: string}
+        preco_venda: {type: string, example: "189.90"}
+        quantidade_atual: {type: integer}
+        estoque_minimo: {type: integer}
+        situacao: {type: string, enum: [CRITICO, ATENCAO, NORMAL]}
+        fornecedor_id: {type: integer, nullable: true}
+        fornecedor: {type: string, nullable: true}
+        ativo: {type: boolean}
+        criado_em: {type: string, format: date-time}
+        atualizado_em: {type: string, format: date-time}
+    MovimentacaoEntrada:
+      type: object
+      required: [produto_id, tipo, quantidade]
+      properties:
+        produto_id: {type: integer}
+        tipo: {type: string, enum: [ENTRADA, SAIDA]}
+        motivo:
+          type: string
+          enum: [COMPRA, DEVOLUCAO_CLIENTE, AJUSTE_POSITIVO, VENDA, PERDA, AJUSTE_NEGATIVO, DEVOLUCAO_FORNECEDOR]
+          description: "Padrão: COMPRA (entrada) ou VENDA (saída)"
+        quantidade: {type: integer, minimum: 1}
+        valor_unitario: {type: string, nullable: true, description: "Padrão em vendas: preço atual do produto"}
+        observacao: {type: string, maxLength: 255}
+    Movimentacao:
+      type: object
+      properties:
+        id: {type: integer}
+        produto_id: {type: integer}
+        produto: {type: string}
+        tipo: {type: string}
+        motivo: {type: string}
+        motivo_descricao: {type: string}
+        quantidade: {type: integer}
+        valor_unitario: {type: string, nullable: true}
+        saldo_apos: {type: integer}
+        observacao: {type: string}
+        usuario: {type: string, nullable: true}
+        data: {type: string, format: date-time}
+    Recomendacao:
+      type: object
+      properties:
+        id: {type: integer}
+        produto_id: {type: integer}
+        produto: {type: string}
+        sku: {type: string}
+        nivel: {type: string, enum: [CRITICO, ATENCAO]}
+        nivel_descricao: {type: string}
+        status: {type: string, enum: [PENDENTE, ACEITA, IGNORADA, EXPIRADA]}
+        quantidade_sugerida: {type: integer}
+        saldo_no_calculo: {type: integer}
+        saldo_atual: {type: integer}
+        media_diaria: {type: string}
+        dias_cobertura: {type: string, nullable: true}
+        tendencia_percentual: {type: string, nullable: true}
+        acao_sugerida: {type: string}
+        justificativa: {type: string}
+        gerada_em: {type: string, format: date-time}
+        decidida_em: {type: string, format: date-time, nullable: true}
+        decidida_por: {type: string, nullable: true}
+    AnaliseProduto:
+      type: object
+      properties:
+        produto: {$ref: "#/components/schemas/Produto"}
+        analise:
+          type: object
+          properties:
+            nivel: {type: string, enum: [CRITICO, ATENCAO, NORMAL]}
+            media_recente_14d: {type: number}
+            media_30d: {type: number}
+            demanda_diaria_prevista: {type: number}
+            dias_cobertura: {type: number, nullable: true}
+            tendencia_percentual: {type: number, nullable: true}
+            prazo_entrega_dias: {type: integer}
+            ponto_de_pedido: {type: integer}
+            quantidade_sugerida: {type: integer}
+            acao_sugerida: {type: string}
+            justificativa: {type: string}
+        vendas_diarias:
+          type: array
+          items:
+            type: object
+            properties:
+              data: {type: string, format: date}
+              quantidade: {type: integer}
+    Dashboard:
+      type: object
+      properties:
+        data_referencia: {type: string, format: date}
+        total_produtos: {type: integer}
+        total_categorias: {type: integer}
+        estoque_baixo: {type: integer}
+        itens_criticos: {type: integer}
+        vendas_mes_unidades: {type: integer}
+        variacao_vendas_percentual: {type: number, nullable: true}
+        faturamento_mes: {type: string}
+        recomendacoes_pendentes: {type: integer}
+        saidas_ultimos_7_dias:
+          type: array
+          items:
+            type: object
+            properties:
+              data: {type: string, format: date}
+              rotulo: {type: string}
+              quantidade: {type: integer}
+        produtos_mais_vendidos:
+          type: array
+          items:
+            type: object
+            properties:
+              produto_id: {type: integer}
+              produto: {type: string}
+              quantidade: {type: integer}
+        produtos_exigem_acao:
+          type: array
+          items:
+            type: object
+            properties:
+              recomendacao_id: {type: integer}
+              produto_id: {type: integer}
+              produto: {type: string}
+              nivel: {type: string}
+              saldo: {type: integer}

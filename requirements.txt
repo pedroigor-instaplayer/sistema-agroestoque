@@ -1,5 +1,3 @@
-Django
-pandas
-numpy
-matplotlib
-jupyter
+# Dependências da aplicação (back-end Flask + front-end integrado)
+Flask>=3.0,<4
+tzdata; sys_platform == "win32"

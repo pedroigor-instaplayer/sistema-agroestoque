@@ -1,0 +1,5 @@
+# Dependências dos notebooks de análise de dados da TED 02 (opcional)
+pandas
+numpy
+matplotlib
+jupyter

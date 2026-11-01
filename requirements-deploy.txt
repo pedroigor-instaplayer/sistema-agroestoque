@@ -1,0 +1,3 @@
+# Dependências adicionais para publicação na web (opcional)
+-r requirements.txt
+gunicorn>=22.0

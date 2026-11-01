@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgroEstoque • Da Roça</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+</head>
+<body>
+  <!-- ============================ LOGIN ============================ -->
+  <section id="login" class="login">
+    <div class="login-grid">
+      <div class="hero">
+        <span class="eyebrow">PROJETO ACADÊMICO • VERSÃO INTEGRADA</span>
+        <h1>Estoque organizado.<br><span>Decisões mais seguras.</span></h1>
+        <p>Uma visão simples das vendas, dos produtos e do risco de falta — pensada para a rotina da Da Roça.</p>
+        <div class="quick">
+          <div><strong>Reposição</strong><small>recomendações explicáveis</small></div>
+          <div><strong>Controle</strong><small>entradas e saídas</small></div>
+          <div><strong>Acesso</strong><small>por perfil de usuário</small></div>
+        </div>
+      </div>
+      <div class="card login-card">
+        <div class="login-head"><div class="brand"><span class="brand-icon">🌿</span><div><strong>AGROESTOQUE</strong><small>Da Roça • Gestão inteligente</small></div></div></div>
+        <form id="loginForm" class="login-body" novalidate>
+          <h2>Acesse o sistema</h2>
+          <p>Entre com seu e-mail e senha cadastrados.</p>
+          <div id="loginError" class="form-error hidden" role="alert"></div>
+          <div class="field"><label for="loginEmail">E-mail</label><input id="loginEmail" type="email" autocomplete="username" required></div>
+          <div class="field"><label for="loginSenha">Senha</label><input id="loginSenha" type="password" autocomplete="current-password" required></div>
+          <button id="enter" type="submit" class="btn btn-primary btn-wide">Entrar no sistema →</button>
+          <div class="fine">Acesso restrito a usuários autorizados.</div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================== APP ============================== -->
+  <section id="app" class="hidden">
+    <div id="overlay" class="overlay"></div>
+    <aside id="sidebar" class="sidebar">
+      <div class="brand"><span class="brand-icon">🌿</span><div><strong>AGROESTOQUE</strong><small>Da Roça • Gestão inteligente</small></div></div>
+      <div class="menu-label">MENU PRINCIPAL</div>
+      <nav class="nav">
+        <button class="active" data-view="dashboard">◉ &nbsp; Visão geral</button>
+        <button data-view="produtos">▦ &nbsp; Produtos</button>
+        <button data-view="movimentacoes">⇄ &nbsp; Movimentações</button>
+        <button data-view="recomendacoes">✦ &nbsp; Recomendações <span id="recBadge" class="badge badge-amber hidden" style="margin-left:4px;padding:2px 8px">0</span></button>
+        <button id="navUsuarios" class="hidden" data-view="usuarios">☺ &nbsp; Usuários</button>
+      </nav>
+      <div class="shop">
+        <strong>🐾 Da Roça Agropecuária &amp; Pet</strong>
+        <p id="shopUser">—</p>
+        <button id="logout">↪ Sair</button>
+        <a class="link-docs" href="{{ url_for('web.documentacao') }}" target="_blank" rel="noopener">⌘ Documentação da API</a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div style="display:flex;align-items:center;gap:12px"><button id="mobileMenu" class="mobile-menu" aria-label="Abrir menu">☰</button><div><small>SISTEMA AGROESTOQUE</small><h1 id="viewTitle">Visão geral</h1></div></div>
+        <div class="user"><span class="avatar">👤</span><div><strong id="userName">—</strong><small id="userRole">—</small></div></div>
+      </header>
+
+      <div class="content">
+        <!-- Dashboard -->
+        <section id="dashboard" class="page active">
+          <div class="page-title"><div><span id="dashDate" class="eyebrow">—</span><h2 id="dashGreeting">Veja o que precisa de atenção.</h2><p>Indicadores calculados a partir das movimentações registradas.</p></div></div>
+          <div class="stats">
+            <div class="card stat"><small>PRODUTOS</small><b id="stProdutos">—</b><p id="stCategorias">—</p></div>
+            <div class="card stat"><small>ESTOQUE BAIXO</small><b id="stBaixo">—</b><p id="stCriticos">—</p></div>
+            <div class="card stat"><small>VENDAS NO MÊS</small><b id="stVendas">—</b><p id="stVariacao">—</p></div>
+            <div class="card stat"><small>FATURAMENTO</small><b id="stFat">—</b><p>vendas do mês corrente</p></div>
+          </div>
+          <div class="grid-2">
+            <div class="card section-card"><h3>Saídas nos últimos 7 dias</h3><p>Unidades vendidas por dia</p><div id="chart7" class="chart"></div><div style="height:22px"></div></div>
+            <div class="card section-card"><h3>Produtos que exigem ação</h3><p>Ordenados pelo risco de ruptura</p><div id="acaoList"></div></div>
+          </div>
+          <div class="card section-card" style="margin-top:18px"><h3>Mais vendidos (30 dias)</h3><p>Unidades vendidas</p><div id="topList"></div></div>
+        </section>
+
+        <!-- Produtos -->
+        <section id="produtos" class="page">
+          <div class="page-title"><div><h2>Produtos</h2><p>Cadastre produtos e acompanhe a situação de cada item.</p></div><button id="newProduct" class="btn btn-primary">＋ Novo produto</button></div>
+          <div id="productForm" class="card form-card hidden">
+            <h3 id="formTitle">Cadastrar novo produto</h3><p>Preencha os dados básicos para iniciar o acompanhamento.</p>
+            <div id="productError" class="form-error hidden" role="alert"></div>
+            <div class="form-grid">
+              <div class="field"><label for="pNome">Nome do produto *</label><input id="pNome" maxlength="150" placeholder="Ex.: Ração Canina 15 kg"></div>
+              <div class="field"><label for="pCategoria">Categoria *</label><input id="pCategoria" list="listaCategorias" maxlength="80" placeholder="Ex.: Rações"><datalist id="listaCategorias"></datalist></div>
+              <div class="field"><label for="pSku">Código (SKU)</label><input id="pSku" maxlength="30" placeholder="Gerado automaticamente se vazio"></div>
+              <div class="field"><label for="pUnidade">Unidade de medida</label><input id="pUnidade" maxlength="20" placeholder="Ex.: unidade" value="unidade"></div>
+              <div class="field"><label for="pPreco">Preço de venda (R$) *</label><input id="pPreco" inputmode="decimal" placeholder="0,00"></div>
+              <div class="field" id="pQtdWrap"><label for="pQtd">Quantidade atual</label><input id="pQtd" type="number" min="0" value="0"></div>
+              <div class="field"><label for="pMin">Estoque mínimo</label><input id="pMin" type="number" min="0" value="0"></div>
+              <div class="field"><label for="pForn">Fornecedor</label><select id="pForn"><option value="">— nenhum —</option></select></div>
+              <div class="form-actions"><button id="saveProduct" class="btn btn-primary">Salvar produto</button><button id="cancelProduct" class="btn btn-outline" type="button">Cancelar</button></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="toolbar">
+              <div class="toolbar-filters">
+                <input id="search" class="search" placeholder="Buscar por nome, código ou categoria">
+                <select id="fSituacao"><option value="">Todas as situações</option><option value="CRITICO">Crítico</option><option value="ATENCAO">Atenção</option><option value="NORMAL">Normal</option></select>
+              </div>
+              <span id="count" class="badge badge-green">—</span>
+            </div>
+            <div class="table-wrap"><table><thead><tr><th>Produto</th><th>Categoria</th><th>Preço</th><th>Estoque</th><th>Mínimo</th><th>Situação</th><th></th></tr></thead><tbody id="productRows"></tbody></table></div>
+            <div class="pager"><span id="prodPageInfo"></span><div class="row-actions"><button id="prodPrev" class="btn btn-outline btn-sm">‹ Anterior</button><button id="prodNext" class="btn btn-outline btn-sm">Próxima ›</button></div></div>
+          </div>
+        </section>
+
+        <!-- Movimentações -->
+        <section id="movimentacoes" class="page">
+          <div class="page-title"><div><h2>Movimentações</h2><p>Registre entradas e saídas para manter o saldo atualizado.</p></div></div>
+          <div class="movement-grid">
+            <div class="card section-card">
+              <h3>Nova movimentação</h3><p>O saldo do produto é atualizado automaticamente.</p>
+              <div id="movError" class="form-error hidden" role="alert"></div>
+              <div class="type-grid">
+                <button class="type selected" data-type="ENTRADA" type="button"><b>↓ Entrada</b><small>Compra ou devolução</small></button>
+                <button class="type" data-type="SAIDA" type="button"><b>↑ Saída</b><small>Venda ou ajuste</small></button>
+              </div>
+              <div class="field" style="margin-top:18px"><label for="mProduto">Produto</label><select id="mProduto"></select></div>
+              <div id="mSaldo" class="hint"></div>
+              <div class="field"><label for="mMotivo">Motivo</label><select id="mMotivo"></select></div>
+              <div class="field"><label for="mQtd">Quantidade</label><input id="mQtd" type="number" min="1" value="1"></div>
+              <div class="field"><label for="mObs">Observação (opcional)</label><input id="mObs" maxlength="255" placeholder="Ex.: Nota fiscal 1234"></div>
+              <button id="saveMovement" class="btn btn-primary btn-wide">Registrar movimentação</button>
+            </div>
+            <div class="card section-card">
+              <h3>Movimentações recentes</h3><p>Histórico real de entradas e saídas.</p>
+              <div id="movList"></div>
+              <div class="pager" style="padding:14px 0 0;border:0"><span id="movPageInfo"></span><div class="row-actions"><button id="movPrev" class="btn btn-outline btn-sm">‹</button><button id="movNext" class="btn btn-outline btn-sm">›</button></div></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Recomendações -->
+        <section id="recomendacoes" class="page">
+          <div class="page-title"><div><span class="eyebrow">✦ ANÁLISE INTELIGENTE</span><h2>Recomendações para reposição</h2><p>Sugestões explicáveis, calculadas a partir do histórico de vendas. A decisão final é sempre sua.</p></div><button id="genRecs" class="btn btn-primary">↻ Atualizar análise</button></div>
+          <div id="recs" class="recs"></div>
+        </section>
+
+        <!-- Usuários (somente administrador) -->
+        <section id="usuarios" class="page">
+          <div class="page-title"><div><h2>Usuários</h2><p>Cadastre quem pode acessar o sistema e defina o perfil de cada pessoa.</p></div></div>
+          <div class="card form-card">
+            <h3>Novo usuário</h3><p>A senha deve ter ao menos 8 caracteres e não pode ser apenas numérica.</p>
+            <div id="userError" class="form-error hidden" role="alert"></div>
+            <div class="form-grid">
+              <div class="field"><label for="uNome">Nome *</label><input id="uNome" maxlength="120"></div>
+              <div class="field"><label for="uEmail">E-mail *</label><input id="uEmail" type="email" maxlength="254"></div>
+              <div class="field"><label for="uSenha">Senha *</label><input id="uSenha" type="password" autocomplete="new-password"></div>
+              <div class="field"><label for="uPapel">Perfil</label><select id="uPapel"><option value="OPERADOR">Operador</option><option value="GESTOR">Gestor</option><option value="ADMINISTRADOR">Administrador</option></select></div>
+              <div class="form-actions"><button id="saveUser" class="btn btn-primary">Criar usuário</button></div>
+            </div>
+          </div>
+          <div class="card"><div class="table-wrap"><table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Situação</th><th></th></tr></thead><tbody id="userRows"></tbody></table></div></div>
+        </section>
+      </div>
+    </main>
+  </section>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
