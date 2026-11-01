@@ -1,4 +1,4 @@
-/* AgroEstoque – interface integrada à API REST (/api/). JavaScript puro, sem dependências. */
+/ AgroEstoque – interface integrada à API REST (/api/).
 (() => {
   'use strict';
   const $ = (s) => document.querySelector(s);
