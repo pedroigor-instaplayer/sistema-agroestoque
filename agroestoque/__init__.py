@@ -1,4 +1,5 @@
-"""AgroEstoque – sistema de gestão de estoque com recomendação de reposição (Flask)."""
+AgroEstoque – sistema de gestão de estoque com recomendação de reposição (Flask).
+
 import logging
 import os
 import secrets
