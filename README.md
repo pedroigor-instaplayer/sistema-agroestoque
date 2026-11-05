@@ -458,10 +458,6 @@ O servidor precisa permanecer em execução enquanto a aplicação estiver sendo
 
 ### Usuários de demonstração
 
-A senha padrão dos usuários de demonstração é:
-
-`Agro@2026`
-
 | E-mail | Perfil |
 |---|---|
 | `gestor@daroca.com.br` | Gestor |
