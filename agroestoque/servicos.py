@@ -303,12 +303,27 @@ _DIAS_SEMANA = ["SEG", "TER", "QUA", "QUI", "SEX", "SÁB", "DOM"]
 
 
 def _soma_vendas(db, inicio, fim):
-    """(unidades, centavos) de vendas no intervalo [inicio, fim) de datas locais."""
+    """Retorna unidades vendidas e faturamento em centavos."""
     linha = db.execute(
-        """SELECT COALESCE(SUM(quantidade), 0), COALESCE(SUM(quantidade * valor_unitario_centavos), 0)
-           FROM movimentacao WHERE tipo = 'SAIDA' AND motivo = 'VENDA' AND data >= ? AND data < ?""",
-        (util.inicio_dia_db(inicio), util.inicio_dia_db(fim))).fetchone()
-    return linha[0], linha[1]
+        """
+        SELECT
+            COALESCE(SUM(quantidade), 0) AS unidades,
+            COALESCE(
+                SUM(quantidade * valor_unitario_centavos), 0
+            ) AS centavos
+        FROM movimentacao
+        WHERE tipo = 'SAIDA'
+          AND motivo = 'VENDA'
+          AND data >= ?
+          AND data < ?
+        """,
+        (
+            util.inicio_dia_db(inicio),
+            util.inicio_dia_db(fim),
+        ),
+    ).fetchone()
+
+    return linha["unidades"], linha["centavos"]
 
 
 def montar_dashboard(db, agora=None):
