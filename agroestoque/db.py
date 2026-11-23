@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from flask import current_app, g
+import os
 
 SCHEMA = Path(__file__).resolve().parent.parent / "database" / "schema.sql"
 MARCADOR_TRIGGERS = "-- @@TRIGGERS@@"
@@ -28,7 +29,12 @@ def conectar(caminho):
 
 def get_db():
     if "db" not in g:
-        g.db = conectar(current_app.config["DATABASE"])
+        url = current_app.config.get("DATABASE_URL")
+        if url:
+            from .postgres import Conexao
+            g.db = Conexao(url)
+        else:
+            g.db = conectar(current_app.config["DATABASE"])
     return g.db
 
 
@@ -39,10 +45,15 @@ def close_db(_erro=None):
 
 
 def init_db(db):
+    if hasattr(db, "conn"):
+        from .postgres import inicializar
+        return inicializar(db)
     db.executescript(SCHEMA.read_text(encoding="utf-8"))
 
 
 def banco_inicializado(db):
+    if hasattr(db, "conn"):
+        return db.execute("SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'produto'").fetchone() is not None
     return db.execute(
         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='produto'").fetchone() is not None
 
@@ -53,7 +64,9 @@ def transacao(db):
     if db.in_transaction:  # já dentro de uma transação externa
         yield db
         return
-    db.execute("BEGIN IMMEDIATE")
+    db.execute("BEGIN" if hasattr(db, "conn") else "BEGIN IMMEDIATE")
+    if hasattr(db, "conn"):
+        db.in_transaction = True
     try:
         yield db
     except BaseException:
@@ -61,6 +74,9 @@ def transacao(db):
         raise
     else:
         db.execute("COMMIT")
+    finally:
+        if hasattr(db, "conn"):
+            db.in_transaction = False
 
 
 def _comandos_triggers():
@@ -75,6 +91,15 @@ def triggers_suspensos(db):
 
     Não usa executescript (que faria COMMIT implícito), para funcionar dentro de transações.
     """
+    if hasattr(db, "conn"):
+        db.execute("DROP TRIGGER IF EXISTS trg_mov_sem_update ON movimentacao")
+        db.execute("DROP TRIGGER IF EXISTS trg_mov_sem_delete ON movimentacao")
+        try:
+            yield db
+        finally:
+            db.execute("CREATE TRIGGER trg_mov_sem_update BEFORE UPDATE ON movimentacao FOR EACH ROW EXECUTE FUNCTION impedir_movimentacao()")
+            db.execute("CREATE TRIGGER trg_mov_sem_delete BEFORE DELETE ON movimentacao FOR EACH ROW EXECUTE FUNCTION impedir_movimentacao()")
+        return
     db.execute("DROP TRIGGER IF EXISTS trg_mov_sem_update")
     db.execute("DROP TRIGGER IF EXISTS trg_mov_sem_delete")
     try:

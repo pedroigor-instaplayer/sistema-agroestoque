@@ -1,3 +1,5 @@
 # Dependências adicionais para publicação na web (opcional)
 -r requirements.txt
 gunicorn>=22.0
+
+psycopg[binary]>=3.2,<4

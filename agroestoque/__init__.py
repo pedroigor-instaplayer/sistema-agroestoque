@@ -52,7 +52,8 @@ def create_app(config=None):
     app.extensions["limite_fotos"] = agente.LimiteFotos()
 
     # --- banco de dados ---
-    Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
+    if not app.config.get("DATABASE_URL"):
+        Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
     app.teardown_appcontext(db.close_db)
     with app.app_context():
         conn = db.get_db()
@@ -80,9 +81,13 @@ def create_app(config=None):
     @app.errorhandler(Exception)
     def tratar_inesperado(e):
         import sqlite3
+        try:
+            from psycopg import IntegrityError as PgIntegrityError
+        except ImportError:
+            PgIntegrityError = ()
         if not request.path.startswith("/api"):
             raise e
-        if isinstance(e, sqlite3.IntegrityError):
+        if isinstance(e, (sqlite3.IntegrityError, PgIntegrityError)):
             app.logger.warning("Violação de integridade: %s", e)
             return _erro_json(409, "CONFLITO_DADOS", "Os dados enviados violam uma restrição do banco.")
         app.logger.exception("Erro inesperado em %s %s", request.method, request.path)

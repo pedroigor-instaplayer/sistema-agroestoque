@@ -12,6 +12,7 @@ class Config:
     AGROESTOQUE_MODELO_IA (agente de IA que cadastra produtos por foto)
     """
     SECRET_KEY = os.environ.get("AGROESTOQUE_SECRET_KEY", "")
+    DATABASE_URL = os.environ.get("DATABASE_URL", "")
     DATABASE = os.environ.get("AGROESTOQUE_DATABASE", str(RAIZ / "instance" / "agroestoque.sqlite3"))
     TIMEZONE = "America/Fortaleza"
     TOKEN_TTL_SEGUNDOS = 8 * 60 * 60
