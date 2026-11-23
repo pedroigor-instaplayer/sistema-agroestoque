@@ -31,6 +31,11 @@
           <button id="enter" type="submit" class="btn btn-primary btn-wide">Entrar no sistema →</button>
           <div class="fine">Acesso restrito a usuários autorizados.</div>
         </form>
+        <div id="googleWrap" class="google-wrap hidden">
+          <div class="divider"><span>ou</span></div>
+          <div id="googleBtn" class="google-btn" aria-label="Entrar com sua conta Google"></div>
+          <div class="fine">Use a conta Google do e-mail cadastrado no sistema.</div>
+        </div>
       </div>
     </div>
   </section>
@@ -81,7 +86,13 @@
 
         <!-- Produtos -->
         <section id="produtos" class="page">
-          <div class="page-title"><div><h2>Produtos</h2><p>Cadastre produtos e acompanhe a situação de cada item.</p></div><button id="newProduct" class="btn btn-primary">＋ Novo produto</button></div>
+          <div class="page-title"><div><h2>Produtos</h2><p>Cadastre produtos e acompanhe a situação de cada item.</p></div><div class="page-actions">
+            <input id="photoQtd" class="photo-qtd" type="number" min="0" inputmode="numeric" placeholder="Qtd. (opcional)" aria-label="Quantidade em estoque (opcional)">
+            <button id="photoProduct" class="btn btn-outline" type="button">📷 Cadastrar por foto</button>
+            <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+            <button id="newProduct" class="btn btn-primary">＋ Novo produto</button>
+          </div></div>
+          <div id="photoResult" class="card photo-result hidden" role="status" aria-live="polite"></div>
           <div id="productForm" class="card form-card hidden">
             <h3 id="formTitle">Cadastrar novo produto</h3><p>Preencha os dados básicos para iniciar o acompanhamento.</p>
             <div id="productError" class="form-error hidden" role="alert"></div>

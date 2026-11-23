@@ -217,7 +217,7 @@ A etapa permitiu aplicar conceitos de aprendizado de máquina ao contexto do pro
 
 ---
 
-## Implementação do back-end, integração e evolução da aplicação
+## TED 04 — Implementação do back-end, integração e evolução da aplicação
 
 Durante a evolução do projeto, o protótipo visual foi transformado em uma aplicação web funcional.
 
@@ -434,25 +434,25 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 6. Carregar os dados de demonstração
+### 6. Inicializar o banco (somente quando necessário)
 
 ```bash
-flask --app agroestoque seed-demo
+python -m flask --app agroestoque init-db
 ```
 
-Esse comando prepara os dados de demonstração, incluindo o banco de dados, usuários, produtos, movimentações e recomendações.
+**Atenção:** quem já possui o banco `instance/agroestoque.sqlite3` deve preservar esse arquivo e seu backup. Não execute comandos de limpeza nem recarregue dados de demonstração em um banco com registros importantes. O comando `seed-demo` é destinado à preparação de uma instalação de demonstração separada.
 
 ### 7. Iniciar o servidor
 
-```bash
-python run.py
+```powershell
+python -m flask --app agroestoque run --host=127.0.0.1 --port=8000 --no-debugger --no-reload
 ```
 
 ### 8. Acessar o sistema
 
 Abra o navegador e acesse:
 
-[http://127.0.0.1:5000/](http://127.0.0.1:5000/)
+[http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 
 O servidor precisa permanecer em execução enquanto a aplicação estiver sendo utilizada.
 
@@ -468,7 +468,7 @@ A conta de administrador possui acesso à funcionalidade de gerenciamento de usu
 
 > Atenção: as credenciais são destinadas exclusivamente à demonstração acadêmica. Não utilize uma senha padrão em um ambiente de produção.
 
-O banco SQLite é criado automaticamente:
+O banco SQLite é criado quando necessário:
 
 `instance/agroestoque.sqlite3`
 
@@ -480,7 +480,7 @@ Importante: o comando `seed-demo` carrega os dados de demonstração. A opção 
 |---|---|
 | `flask --app agroestoque init-db` | Cria as tabelas, caso ainda não existam |
 | `flask --app agroestoque seed-demo` | Carrega os dados de demonstração |
-| `flask --app agroestoque seed-demo --limpar` | Recarrega a demonstração com limpeza dos dados anteriores |
+| `flask --app agroestoque seed-demo --limpar` | **Destrutivo:** pode limpar dados anteriores; não utilizar no banco de trabalho |
 | `flask --app agroestoque criar-usuario` | Cria um usuário informando nome, e-mail, perfil e senha |
 | `flask --app agroestoque importar-base --dias 90 --loja S001` | Importa a base do TED 02 |
 
@@ -495,10 +495,10 @@ O projeto possui testes automatizados organizados no diretório `tests/`.
 Para executar os testes:
 
 ```bash
-python -m unittest discover -s tests -v
+python -m pytest -v
 ```
 
-A suíte documentada contempla 72 testes, relacionados a:
+Na verificação local de 23/11/2026, foram **121 testes aprovados** com `python -m pytest -v`, relacionados a:
 
 - Motor de análise;
 - Autenticação;
@@ -507,7 +507,8 @@ A suíte documentada contempla 72 testes, relacionados a:
 - Consistência de estoque;
 - Recomendações;
 - Painel;
-- Segurança.
+- Segurança;
+- Cadastro por foto com IA e integrações (com dependências externas simuladas nos testes).
 
 Os testes auxiliaram na verificação das regras de negócio e na identificação de falhas durante a evolução da aplicação.
 
@@ -517,7 +518,7 @@ A aplicação disponibiliza uma API REST para comunicação entre a interface e 
 
 A documentação interativa pode ser acessada pelo endereço:
 
-[http://127.0.0.1:5000/api-docs](http://127.0.0.1:5000/api-docs)
+[http://127.0.0.1:8000/api-docs](http://127.0.0.1:8000/api-docs)
 
 A interface Swagger UI é fornecida por CDN e precisa de conexão com a internet.
 
@@ -538,9 +539,9 @@ python scripts/gerar_postman.py
 ## Exemplo de autenticação com cURL
 
 ```bash
-TOKEN=$(curl -s -X POST http://127.0.0.1:5000/api/auth/login \
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"gestor@daroca.com.br","senha":"Agro@2026"}' \
+  -d '{"email":"gestor@daroca.com.br","senha":"SUA_SENHA"}' \
   | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
 ```
 
@@ -548,7 +549,7 @@ Consulta do dashboard utilizando o token:
 
 ```bash
 curl -H "Authorization: Bearer $TOKEN" \
-http://127.0.0.1:5000/api/dashboard
+http://127.0.0.1:8000/api/dashboard
 ```
 
 ## Principais rotas da API
@@ -587,54 +588,70 @@ Os erros da API seguem um formato padronizado:
 
 ---
 
-## Publicação na web
+## Cadastro por foto com IA e integrações MCP
 
-A aplicação pode ser preparada para hospedagem em ambiente de produção, desde que sejam definidas as dependências e variáveis de ambiente necessárias.
+### Agente de IA: fotografar e cadastrar
 
-O arquivo `requirements-deploy.txt` contém as dependências destinadas à implantação.
-
-### Exemplo de configuração
+Na tela **Produtos**, o botão **📷 Cadastrar por foto** abre a câmera do celular (ou o seletor de arquivos no computador). O agente lê a foto e cadastra o produto na hora: nome com marca e peso, categoria (reaproveita as existentes), unidade, preço *somente se houver etiqueta legível* e código de barras *somente se legível*. Um campo opcional de quantidade lança o estoque inicial.
 
 ```bash
-pip install -r requirements-deploy.txt
-
-export AGROESTOQUE_PRODUCAO=1
-
-export AGROESTOQUE_SECRET_KEY="<valor longo e aleatório>"
-
-export AGROESTOQUE_DATABASE="/caminho/persistente/agroestoque.sqlite3"
-
-flask --app agroestoque init-db
-
-flask --app agroestoque criar-usuario
-
-gunicorn wsgi:app --bind 0.0.0.0:$PORT
+export ANTHROPIC_API_KEY="sk-ant-..."                 # chave da API da Anthropic
+export AGROESTOQUE_MODELO_IA="MODELO_COMPATIVEL" # opcional; confira a disponibilidade no provedor
 ```
 
-No Windows, as variáveis de ambiente devem ser definidas de acordo com o terminal utilizado. O exemplo acima utiliza sintaxe de shell compatível com ambientes Linux.
+- **Tratamento de duplicidades:** o mesmo código de barras ou o mesmo nome (sem diferenciar maiúsculas e acentos) devolve o produto existente.
+- **Sem preço legível**, o produto entra com R$ 0,00 e o painel avisa "Preço a definir".
+- **Foto sem produto claro** não cadastra nada: o agente explica o motivo e pede outra foto.
+- **Quem pode usar:** qualquer perfil autenticado, inclusive **Operador** (decisão do projeto: quem trabalha na loja cadastra; o cadastro manual continua só para gestão). A autorização deve ser revista conforme a política de acesso da implantação.
+- **Controles:** máximo de 10 fotos por minuto por usuário, 6 MB por foto, tipo conferido pelo conteúdo do arquivo, e o modelo **nunca escreve no banco**: a resposta dele passa pelas mesmas validações do cadastro manual.
+- **Privacidade e custo:** a foto é enviada à API da Anthropic para ser analisada (o navegador a reduz para 1280 px antes) e **não é guardada** no sistema. Cada foto é uma chamada paga da API.
+
+### Servidor MCP (integrações externas)
+
+`scripts/mcp_agroestoque.py` é um servidor [MCP](https://modelcontextprotocol.io) (stdio, sem dependências) com as ferramentas `cadastrar_produto` e `consultar_produto`. Uma integração externa pode utilizar essas ferramentas para acessar a API do sistema, respeitando as regras de autenticação. Para integrações externas, utilize credenciais próprias com permissões mínimas:
+
+```json
+{"mcpServers": {"agroestoque": {
+  "command": "python3", "args": ["scripts/mcp_agroestoque.py"],
+  "env": {"AGROESTOQUE_URL": "http://127.0.0.1:8000",
+          "AGROESTOQUE_EMAIL": "agente@daroca.com.br", "AGROESTOQUE_SENHA": "..."}}}}
+```
+
+> O servidor MCP e a rota `/api/agente/produtos` já estão prontos. O **bot** de WhatsApp/Telegram em si (receber a mensagem, baixar a foto e conversar com o agente) é um componente à parte, ainda não incluído.
+
+## Publicação no Render (planejamento de implantação)
+
+O GitHub armazena o código-fonte, mas a aplicação só ficará online após configurar e publicar um serviço web no Render.
+
+### Configuração prevista do serviço web
+
+- **Repositório:** `pedroigor-instaplayer/sistema-agroestoque` (branch `main`);
+- **Runtime:** Python;
+- **Build command:** `pip install -r requirements-deploy.txt`;
+- **Start command:** `gunicorn wsgi:app --bind 0.0.0.0:$PORT --workers 1`;
+- **Health check path:** `/api/saude`.
 
 ### Variáveis de ambiente
 
 | Variável | Finalidade |
 |---|---|
-| `AGROESTOQUE_PRODUCAO` | Ativa as configurações de produção |
-| `AGROESTOQUE_SECRET_KEY` | Chave utilizada para assinar os tokens |
-| `AGROESTOQUE_DATABASE` | Caminho do banco de dados SQLite |
-| `HOST` | Endereço de inicialização do servidor |
-| `PORT` | Porta de execução |
-| `FLASK_DEBUG` | Controle do modo de depuração |
+| `AGROESTOQUE_PRODUCAO=1` | Ativa o modo de produção |
+| `AGROESTOQUE_SECRET_KEY` | Chave longa e aleatória, configurada diretamente no Render |
+| `AGROESTOQUE_DATABASE` | Caminho persistente para o arquivo SQLite |
+| `ANTHROPIC_API_KEY` | Chave privada da API para cadastro por foto, quando utilizada |
+| `AGROESTOQUE_MODELO_IA` | Modelo de visão configurável, conforme disponibilidade da API |
 
-### Observações sobre hospedagem
+A chave de produção pode ser gerada localmente com `python -c "import secrets; print(secrets.token_hex(32))"`. **Nunca publique chaves, senhas, `.env`, arquivos SQLite ou backups no GitHub.**
 
-- Utilize HTTPS para proteger a comunicação;
-- Configure uma chave secreta longa e segura;
-- Utilize armazenamento persistente para o banco SQLite;
-- Mantenha uma configuração adequada de processos do Gunicorn;
-- Para cenários com múltiplos processos ou maior concorrência, considere migrar para PostgreSQL e usar armazenamento compartilhado para o controle de tentativas de login.
+### Atenção especial ao banco SQLite
 
-O repositório no GitHub contém o código-fonte do projeto. Sua publicação no GitHub não significa que o aplicativo esteja automaticamente hospedado ou disponível na internet.
+O banco de dados contém usuários, produtos, movimentações e recomendações e **não deve ser recriado ou sobrescrito** durante a publicação. A pasta `instance/` permanece fora do Git. Antes de implantar, é necessário definir um procedimento seguro de transferência do banco existente para armazenamento persistente e verificar os registros depois da migração.
 
----
+Em hospedagem sem disco persistente, os arquivos SQLite podem desaparecer em reinicializações ou novas implantações. Portanto, **não usar SQLite em armazenamento temporário para dados importantes**. Um disco persistente no Render pode exigir plano pago; outra alternativa é adaptar o sistema para um banco externo persistente, o que requer mudanças no código.
+
+A implantação deve usar HTTPS. Para a configuração atual, manter um único worker evita inconsistências nos limites de tentativas de login e de fotos, que são mantidos em memória. A migração para vários workers exigirá um mecanismo compartilhado para esses limites.
+
+O login por e-mail e senha, com usuários cadastrados pelo administrador, é a configuração principal. **Não é necessário configurar login Google** para publicar esta versão.
 
 ## Organização do projeto
 
@@ -649,6 +666,8 @@ sistema-agroestoque/
 │
 ├── agroestoque/
 │   ├── __init__.py
+│   ├── agente.py               # cadastro de produtos por foto
+│   ├── google.py              # integração opcional, não configurada
 │   ├── api.py
 │   ├── auth.py
 │   ├── servicos.py
@@ -671,7 +690,8 @@ sistema-agroestoque/
 ├── tests/
 │
 ├── scripts/
-│   └── gerar_postman.py
+│   ├── gerar_postman.py
+│   └── mcp_agroestoque.py
 │
 ├── docs/
 │   ├── api/
@@ -728,8 +748,10 @@ A estrutura apresenta os principais diretórios e arquivos do projeto. Os conte�
 
 A versão atual possui algumas limitações técnicas que devem ser consideradas:
 
-- O bloqueio de tentativas de login utiliza memória do processo; em ambientes com múltiplos processos, recomenda-se armazenamento compartilhado;
+- O bloqueio de tentativas de login e o limite de fotos utilizam memória do processo; em ambientes com múltiplos processos, recomenda-se armazenamento compartilhado;
 - O Swagger UI é carregado por CDN e precisa de internet;
+- O cadastro por foto depende de uma API externa, com custo por utilização e envio da imagem para análise;
+- O código inclui uma integração opcional de login Google, mas ela não faz parte da configuração de implantação adotada;
 - A seleção de produtos na tela de movimentações apresenta até 100 itens;
 - A estimativa de demanda depende da qualidade e da disponibilidade do histórico de vendas;
 - A base utilizada no TED 02 e no TED 03 é sintética e não representa integralmente o comportamento comercial real da Da Roça;

@@ -72,6 +72,94 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Erro"}
+  /api/auth/config:
+    get:
+      tags: [Autenticação]
+      summary: Configuração pública da tela de login
+      description: Informa o Client ID do Google (ou null se o login com Google estiver desativado) e se o agente de IA está ativo.
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              example: {google_client_id: "123.apps.googleusercontent.com", agente_ia: true}
+  /api/auth/google:
+    post:
+      tags: [Autenticação]
+      summary: Entrar com a conta Google
+      security: []
+      description: |
+        Recebe o `credential` (ID token) entregue pelo botão "Entrar com o Google", valida-o no Google
+        e devolve o mesmo token Bearer do login por e-mail e senha. Só entra quem já tem usuário **ativo**
+        com o mesmo e-mail (cadastrado pelo administrador); o sistema não cria usuários automaticamente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [credential]
+              properties:
+                credential: {type: string}
+      responses:
+        "200": {description: Autenticado (mesmo formato de /api/auth/login)}
+        "401": {description: TOKEN_GOOGLE_INVALIDO, content: {application/json: {schema: {$ref: "#/components/schemas/Erro"}}}}
+        "403": {description: CONTA_NAO_AUTORIZADA (e-mail sem usuário ativo), content: {application/json: {schema: {$ref: "#/components/schemas/Erro"}}}}
+        "503": {description: GOOGLE_NAO_CONFIGURADO ou GOOGLE_INDISPONIVEL, content: {application/json: {schema: {$ref: "#/components/schemas/Erro"}}}}
+  /api/agente/foto:
+    post:
+      tags: [Agente de IA]
+      summary: Cadastrar produto a partir de uma foto
+      description: |
+        O agente de IA lê a foto (nome, categoria, unidade, preço da etiqueta e código de barras, quando legíveis)
+        e cadastra o produto com as mesmas regras do cadastro manual. Nunca duplica: se o produto já existir
+        devolve o existente (HTTP 200). Aceita JPEG, PNG, WEBP ou GIF de até 6 MB. Qualquer perfil autenticado.
+        Limite de 10 fotos por minuto por usuário.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [foto]
+              properties:
+                foto: {type: string, format: binary}
+                quantidade: {type: integer, minimum: 0, description: "Estoque inicial (opcional)"}
+      responses:
+        "200": {description: Produto já existia (ja_existia = true)}
+        "201": {description: Produto cadastrado}
+        "413": {description: FOTO_MUITO_GRANDE}
+        "415": {description: TIPO_NAO_SUPORTADO}
+        "422": {description: PRODUTO_NAO_IDENTIFICADO ou PRODUTO_DESATIVADO, content: {application/json: {schema: {$ref: "#/components/schemas/Erro"}}}}
+        "429": {description: MUITAS_FOTOS}
+        "503": {description: AGENTE_NAO_CONFIGURADO ou AGENTE_INDISPONIVEL, content: {application/json: {schema: {$ref: "#/components/schemas/Erro"}}}}
+  /api/agente/produtos:
+    post:
+      tags: [Agente de IA]
+      summary: Cadastro estruturado para agentes externos (servidor MCP)
+      description: Mesmas regras de /api/agente/foto, sem a imagem. Usado por `scripts/mcp_agroestoque.py`.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nome]
+              properties:
+                nome: {type: string, maxLength: 150}
+                categoria: {type: string, maxLength: 80}
+                unidade: {type: string, maxLength: 20}
+                preco_venda: {type: number}
+                codigo_barras: {type: string}
+                quantidade: {type: integer, minimum: 0}
+      responses:
+        "200": {description: Produto já existia}
+        "201": {description: Produto cadastrado}
+        "400": {$ref: "#/components/responses/DadosInvalidos"}
+        "401": {$ref: "#/components/responses/NaoAutenticado"}
   /api/auth/me:
     get:
       tags: [Autenticação]

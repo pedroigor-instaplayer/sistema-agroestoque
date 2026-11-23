@@ -216,3 +216,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Segredos e credenciais
+.env.*
+!.env.example
+.secret_key
+*.pem
+*.key
+
+# Bancos de dados locais
+*.sqlite
+*.sqlite3
+*.db
+
+# Arquivos temporários
+*.tmp
+*.bak

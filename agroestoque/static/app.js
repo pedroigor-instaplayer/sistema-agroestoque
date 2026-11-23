@@ -1,4 +1,4 @@
-/ AgroEstoque – interface integrada à API REST (/api/).
+/* AgroEstoque – interface integrada à API REST (/api/). JavaScript puro, sem dependências. */
 (() => {
   'use strict';
   const $ = (s) => document.querySelector(s);
@@ -43,10 +43,11 @@
   async function api(caminho, { method = 'GET', body } = {}) {
     const headers = { Accept: 'application/json' };
     if (state.token) headers.Authorization = 'Bearer ' + state.token;
-    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    const ehForm = typeof FormData !== 'undefined' && body instanceof FormData;
+    if (body !== undefined && !ehForm) headers['Content-Type'] = 'application/json';
     let resp;
     try {
-      resp = await fetch('/api/' + caminho, { method, headers, body: body !== undefined ? JSON.stringify(body) : undefined });
+      resp = await fetch('/api/' + caminho, { method, headers, body: body === undefined ? undefined : (ehForm ? body : JSON.stringify(body)) });
     } catch (e) {
       const err = new Error('Não foi possível conectar ao servidor.'); throw err;
     }
@@ -56,7 +57,7 @@
       const e = (dados && dados.erro) || {};
       const err = new Error(e.mensagem || 'Erro ' + resp.status);
       err.status = resp.status; err.codigo = e.codigo; err.detalhes = e.detalhes;
-      if (resp.status === 401 && caminho !== 'auth/login') { sair('Sua sessão expirou. Entre novamente.'); }
+      if (resp.status === 401 && !caminho.startsWith('auth/')) { sair('Sua sessão expirou. Entre novamente.'); }
       throw err;
     }
     return dados;
@@ -71,6 +72,7 @@
     $('#userRole').textContent = PAPEIS[usuario.papel] || usuario.papel;
     $('#shopUser').textContent = usuario.email || usuario.username;
     $('#newProduct').classList.toggle('hidden', !isGestao());
+    $('#photoResult').classList.add('hidden');
     $('#genRecs').classList.toggle('hidden', !isGestao());
     $('#navUsuarios').classList.toggle('hidden', usuario.papel !== 'ADMINISTRADOR');
     abrir('dashboard');
@@ -81,7 +83,7 @@
     sessionStorage.removeItem('ae_token');
     // limpa tudo o que foi renderizado para que a próxima pessoa não veja dados da sessão anterior
     ['#recs', '#productRows', '#movList', '#userRows', '#acaoList', '#topList', '#chart7',
-     '#mProduto', '#listaCategorias', '#mSaldo'].forEach((sel) => { $(sel).innerHTML = ''; });
+     '#mProduto', '#listaCategorias', '#mSaldo', '#photoResult'].forEach((sel) => { $(sel).innerHTML = ''; });
     ['#productForm'].forEach((sel) => $(sel).classList.add('hidden'));
     ['#stProdutos', '#stCategorias', '#stBaixo', '#stCriticos', '#stVendas', '#stVariacao', '#stFat']
       .forEach((sel) => { $(sel).textContent = '—'; });
@@ -96,11 +98,34 @@
     hideError('#loginError');
     const btn = $('#enter'); btn.disabled = true;
     try {
-      const r = await api('auth/login', { method: 'POST', body: { email: $('#loginEmail').value, senha: $('#loginSenha').value } });
-      state.token = r.token; sessionStorage.setItem('ae_token', r.token);
-      entrarNoApp(r.usuario);
+      concluirLogin(await api('auth/login', { method: 'POST', body: { email: $('#loginEmail').value, senha: $('#loginSenha').value } }));
     } catch (e) { showError('#loginError', e); } finally { btn.disabled = false; }
   });
+  function concluirLogin(r) {
+    state.token = r.token; sessionStorage.setItem('ae_token', r.token);
+    entrarNoApp(r.usuario);
+  }
+
+  // ------------------------------------------------- entrar com o Google
+  async function entrarComGoogle(resposta) {
+    hideError('#loginError');
+    try {
+      concluirLogin(await api('auth/google', { method: 'POST', body: { credential: resposta.credential } }));
+    } catch (e) { showError('#loginError', e); }
+  }
+  function iniciarGoogle(clientId) {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client'; s.async = true; s.defer = true;
+    s.onload = () => {
+      window.google.accounts.id.initialize({ client_id: clientId, callback: entrarComGoogle, auto_select: false });
+      window.google.accounts.id.renderButton($('#googleBtn'),
+        { type: 'standard', theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill', locale: 'pt-BR', width: 300 });
+      $('#googleWrap').classList.remove('hidden');
+    };
+    s.onerror = () => { /* sem internet: o login por e-mail e senha continua funcionando */ };
+    document.head.appendChild(s);
+  }
+  api('auth/config').then((c) => { if (c.google_client_id) iniciarGoogle(c.google_client_id); }).catch(() => {});
   $('#logout').addEventListener('click', () => sair());
 
   // ------------------------------------------------------------ navegação
@@ -198,6 +223,50 @@
     $('#productForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
   $('#newProduct').addEventListener('click', () => abrirForm(null));
+
+  // ---------------------------------------- agente de IA: cadastro por foto
+  async function reduzirImagem(arquivo, maximo = 1280) {
+    // fotos de celular têm vários MB; reduz antes de enviar (mais rápido e mais barato)
+    try {
+      const bmp = await createImageBitmap(arquivo);
+      const escala = Math.min(1, maximo / Math.max(bmp.width, bmp.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * escala); c.height = Math.round(bmp.height * escala);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.85));
+      return blob || arquivo;
+    } catch (e) { return arquivo; }
+  }
+  function painelFoto(classe, previa, html) {
+    const box = $('#photoResult');
+    box.className = 'card photo-result ' + classe;
+    box.innerHTML = (previa ? `<img src="${previa}" alt="Foto enviada">` : '') + `<div>${html}</div>`;
+    box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  $('#photoProduct').addEventListener('click', () => $('#photoInput').click());
+  $('#photoInput').addEventListener('change', async (ev) => {
+    const arquivo = ev.target.files[0]; ev.target.value = '';
+    if (!arquivo) return;
+    const previa = URL.createObjectURL(arquivo);
+    const btn = $('#photoProduct'); btn.disabled = true;
+    painelFoto('carregando', previa, '<h3>🔎 O agente está analisando a foto…</h3><p>Isso leva alguns segundos.</p>');
+    try {
+      const fd = new FormData();
+      fd.append('foto', await reduzirImagem(arquivo), 'foto.jpg');
+      if ($('#photoQtd').value) fd.append('quantidade', $('#photoQtd').value);
+      const r = await api('agente/foto', { method: 'POST', body: fd });
+      const p = r.produto;
+      painelFoto('', previa, `<h3>${r.ja_existia ? 'ℹ️' : '✅'} ${esc(r.mensagem)}</h3>
+        <p>${esc(p.categoria)} • ${esc(p.unidade)} • ${money(p.preco_venda)} • código ${esc(p.sku)} • saldo ${num(p.quantidade_atual)}</p>
+        ${(r.avisos || []).map((a) => `<p class="avisos">⚠ ${esc(a)}</p>`).join('')}
+        ${isGestao() ? '<div class="acoes"><button class="btn btn-outline btn-sm" id="photoEdit" type="button">Revisar / editar</button></div>' : ''}`);
+      if (isGestao()) $('#photoEdit').addEventListener('click', () => abrirForm(p));
+      $('#photoQtd').value = '';
+      toast(r.mensagem); await carregarProdutos(); atualizarBadge();
+    } catch (e) {
+      painelFoto('erro', previa, `<h3>❌ Não foi possível cadastrar</h3><p>${esc(e.message)}</p>`);
+    } finally { btn.disabled = false; }
+  });
   $('#cancelProduct').addEventListener('click', () => $('#productForm').classList.add('hidden'));
   $('#saveProduct').addEventListener('click', async () => {
     hideError('#productError');

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 from flask import Blueprint, current_app, g, jsonify, request
 
-from . import analise, auth, servicos, serializers as s, util, validacao as v
+from . import agente, analise, auth, google, servicos, serializers as s, util, validacao as v
 from .auth import ADMINISTRADOR, GESTAO, protegido
 from .db import get_db
 from .erros import ApiError, acesso_negado, erro_campo, nao_encontrado, regra
@@ -49,6 +49,39 @@ def login():
 @protegido()
 def me():
     return jsonify(s.usuario(g.usuario))
+
+
+@bp.get("/auth/config")
+def config_publica():
+    """Configuração que a tela de login precisa antes de autenticar (nada sigiloso)."""
+    cfg = current_app.config
+    return jsonify(google_client_id=cfg.get("GOOGLE_CLIENT_ID") or None, agente_ia=agente.configurado())
+
+
+@bp.post("/auth/google")
+def login_google():
+    """Entrar com a conta Google. Só entra quem já tem usuário ativo com o mesmo e-mail."""
+    client_id = current_app.config.get("GOOGLE_CLIENT_ID")
+    if not client_id:
+        raise ApiError(503, "GOOGLE_NAO_CONFIGURADO", "O login com Google não está ativado neste servidor.")
+    credential = v.texto(v.ler_json(), "credential", max_len=4096)
+    try:
+        info = google.verificar(credential, client_id)
+    except google.TokenGoogleInvalido as e:
+        current_app.logger.warning("Login Google recusado: %s", e)
+        raise ApiError(401, "TOKEN_GOOGLE_INVALIDO", "Não foi possível validar a sua conta Google. Tente novamente.")
+    except google.GoogleIndisponivel as e:
+        current_app.logger.error("Login Google: Google inacessível (%s)", e)
+        raise ApiError(503, "GOOGLE_INDISPONIVEL",
+                       "Não foi possível falar com o Google agora. Entre com e-mail e senha ou tente de novo.")
+    usuario = get_db().execute("SELECT * FROM usuario WHERE email = ?", (info["email"],)).fetchone()
+    if usuario is None or not usuario["ativo"]:
+        current_app.logger.warning("Login Google de conta não autorizada: %s", info["email"])
+        raise ApiError(403, "CONTA_NAO_AUTORIZADA",
+                       f"A conta {info['email']} não está autorizada. Peça ao administrador para cadastrar este e-mail.")
+    return jsonify(token=auth.gerar_token(usuario), tipo="Bearer",
+                   expira_em_segundos=current_app.config["TOKEN_TTL_SEGUNDOS"],
+                   usuario=s.usuario(usuario))
 
 
 @bp.post("/auth/alterar-senha")
@@ -110,6 +143,74 @@ def usuarios_atualizar(uid):
         raise ApiError(400, "DADOS_INVALIDOS", "Nenhum campo para atualizar.")
     db.execute(f"UPDATE usuario SET {', '.join(sets)} WHERE id = ?", (*params, uid))
     return jsonify(s.usuario(servicos.buscar_usuario(db, uid)))
+
+
+# ------------------------------------------------------------ agente de IA
+def _resposta_agente(produto, ja_existia, confianca=None, quantidade=0):
+    p = s.produto(produto)
+    aviso = []
+    if ja_existia:
+        msg = f"\"{p['nome']}\" já estava cadastrado. Nada foi duplicado."
+        if quantidade:
+            aviso.append("A quantidade informada não foi lançada; registre a entrada em Movimentações.")
+    else:
+        msg = f"Produto \"{p['nome']}\" cadastrado."
+        if p["preco_venda"] in (0, 0.0, "0.00", "0"):
+            aviso.append("Preço a definir: não havia etiqueta legível.")
+        if confianca == "baixa":
+            aviso.append("Confiança baixa: confira os dados.")
+    resp = jsonify(produto=p, ja_existia=ja_existia, confianca=confianca, avisos=aviso, mensagem=msg)
+    resp.status_code = 200 if ja_existia else 201
+    return resp
+
+
+@bp.post("/agente/foto")
+@protegido()
+def agente_foto():
+    """Recebe a foto de um produto (multipart, campo 'foto'); o agente de IA o identifica e cadastra."""
+    cfg = current_app.config
+    limite = cfg["AGENTE_MAX_FOTO_BYTES"]
+    request.max_content_length = limite + 200_000     # fotos passam do limite padrão de 1 MB
+    if not agente.configurado():
+        raise ApiError(503, "AGENTE_NAO_CONFIGURADO",
+                       "O agente de IA ainda não foi ativado neste servidor. Avise o administrador.")
+    arquivo = request.files.get("foto")
+    if arquivo is None:
+        raise erro_campo("foto", "Envie a foto no campo 'foto' (multipart/form-data).")
+    imagem = arquivo.read(limite + 1)
+    if len(imagem) > limite:
+        raise ApiError(413, "FOTO_MUITO_GRANDE", f"A foto passa de {limite // 1_000_000} MB.")
+    tipo = agente.detectar_tipo(imagem)
+    if tipo is None:
+        raise ApiError(415, "TIPO_NAO_SUPORTADO", "Envie uma imagem JPEG, PNG, WEBP ou GIF.")
+    quantidade = v.inteiro(request.form, "quantidade", obrigatorio=False, minimo=0, padrao=0)
+    if not current_app.extensions["limite_fotos"].permitir(g.usuario["id"], cfg["AGENTE_FOTOS_POR_MINUTO"]):
+        raise ApiError(429, "MUITAS_FOTOS", "Muitas fotos em pouco tempo. Aguarde um minuto.")
+    db = get_db()
+    saida = agente.consultar_modelo(imagem, tipo, agente.categorias_existentes(db))
+    campos = agente.normalizar(saida)
+    produto, ja_existia = agente.cadastrar(db, campos, g.usuario["id"], quantidade)
+    current_app.logger.info("Agente de IA: produto %s (%s) por %s", produto["id"],
+                            "já existia" if ja_existia else "cadastrado", g.usuario["email"])
+    return _resposta_agente(produto, ja_existia, campos["confianca"], quantidade)
+
+
+@bp.post("/agente/produtos")
+@protegido()
+def agente_produtos():
+    """Cadastro estruturado para agentes externos (servidor MCP: WhatsApp, Telegram etc.).
+
+    Mesmas regras da foto: nunca duplica, preço opcional, qualquer perfil autenticado.
+    """
+    d = v.ler_json()
+    campos = agente.normalizar({
+        "identificado": True, "nome": v.texto(d, "nome", max_len=150),
+        "categoria": v.texto(d, "categoria", obrigatorio=False, max_len=80, padrao="Outros"),
+        "unidade": v.texto(d, "unidade", obrigatorio=False, max_len=20, padrao="unidade"),
+        "preco_venda": d.get("preco_venda"), "codigo_barras": d.get("codigo_barras"), "confianca": "alta"})
+    quantidade = v.inteiro(d, "quantidade", obrigatorio=False, minimo=0, padrao=0)
+    produto, ja_existia = agente.cadastrar(get_db(), campos, g.usuario["id"], quantidade)
+    return _resposta_agente(produto, ja_existia, None, quantidade)
 
 
 # ---------------------------------------------------------------- categorias

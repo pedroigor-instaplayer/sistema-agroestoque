@@ -1,5 +1,4 @@
-AgroEstoque – sistema de gestão de estoque com recomendação de reposição (Flask).
-
+"""AgroEstoque – sistema de gestão de estoque com recomendação de reposição (Flask)."""
 import logging
 import os
 import secrets
@@ -9,7 +8,7 @@ from flask import Flask, jsonify, request
 from werkzeug.exceptions import HTTPException
 from werkzeug.security import generate_password_hash
 
-from . import auth, db, util
+from . import agente, auth, db, util
 from .config import Config
 from .erros import ApiError
 
@@ -50,6 +49,7 @@ def create_app(config=None):
     app.config["_HASH_FALSO"] = generate_password_hash(
         "senha-inexistente", method=f"pbkdf2:sha256:{app.config['PASSWORD_ITERACOES']}")
     app.extensions["limitador_login"] = auth.LimitadorLogin()
+    app.extensions["limite_fotos"] = agente.LimiteFotos()
 
     # --- banco de dados ---
     Path(app.config["DATABASE"]).parent.mkdir(parents=True, exist_ok=True)
