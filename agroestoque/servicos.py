@@ -358,7 +358,7 @@ def montar_dashboard(db, agora=None):
             """SELECT m.produto_id, p.nome, SUM(m.quantidade) AS total FROM movimentacao m
                JOIN produto p ON p.id = m.produto_id
                WHERE m.tipo='SAIDA' AND m.motivo='VENDA' AND m.data >= ? AND m.data < ?
-               GROUP BY m.produto_id ORDER BY total DESC, p.nome LIMIT 5""",
+               GROUP BY m.produto_id, p.nome ORDER BY total DESC, p.nome LIMIT 5""",
             (util.inicio_dia_db(hoje - timedelta(days=29)), util.inicio_dia_db(amanha)))]
 
     exigem = [

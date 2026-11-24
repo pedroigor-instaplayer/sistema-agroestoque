@@ -93,7 +93,9 @@ INSTRUCOES = (
     "Você é o assistente de cadastro de produtos da Da Roça Agropecuária & Pet. "
     "Receberá a foto de um produto à venda, como ração, medicamento veterinário, "
     "acessório, ferramenta ou insumo agrícola. "
-    "Analise a foto e chame a ferramenta cadastrar_produto UMA vez.\n"
+    "Analise a foto e utilize obrigatoriamente a ferramenta "
+    "cadastrar_produto UMA única vez para devolver o resultado. "
+    "Não responda somente com texto.\n"
     "Regras: escreva o nome como aparece na embalagem, com marca e peso ou volume; "
     "use uma das categorias existentes quando fizer sentido; "
     "NÃO invente preço nem código de barras: se não estiverem legíveis, deixe null; "
@@ -118,11 +120,15 @@ ASSINATURAS = (
 
 def configurado():
     """Verifica se a chave da Anthropic está configurada."""
-    return bool(current_app.config.get("ANTHROPIC_API_KEY"))
+
+    return bool(
+        current_app.config.get("ANTHROPIC_API_KEY")
+    )
 
 
 def detectar_tipo(dados):
     """Identifica o formato real da imagem."""
+
     for assinatura, tipo in ASSINATURAS:
         if dados.startswith(assinatura):
             return tipo
@@ -186,10 +192,13 @@ def consultar_modelo(imagem, tipo, categorias):
         "max_tokens": 600,
         "system": instrucoes,
         "tools": [FERRAMENTA],
+
+        # Compatibilidade com Claude Sonnet 5.5.
+        # O modelo não aceita tool_choice do tipo tool ou any.
         "tool_choice": {
-            "type": "tool",
-            "name": FERRAMENTA["name"]
+            "type": "auto"
         },
+
         "messages": [
             {
                 "role": "user",
@@ -199,7 +208,9 @@ def consultar_modelo(imagem, tipo, categorias):
                         "source": {
                             "type": "base64",
                             "media_type": tipo,
-                            "data": base64.b64encode(imagem).decode("ascii")
+                            "data": base64.b64encode(
+                                imagem
+                            ).decode("ascii")
                         }
                     },
                     {
@@ -231,9 +242,20 @@ def consultar_modelo(imagem, tipo, categorias):
 
     except urllib.error.HTTPError as e:
 
-        # Lê a mensagem de erro devolvida pela Anthropic.
-        # Não registra a chave da API.
-        detalhe = e.read().decode("utf-8", errors="replace")
+        # Registra os detalhes do erro para diagnóstico.
+        detalhe = e.read().decode(
+            "utf-8",
+            errors="replace"
+        )
+
+        # Protege a chave da API nos registros.
+        chave = cfg.get("ANTHROPIC_API_KEY", "")
+
+        if chave:
+            detalhe = detalhe.replace(
+                chave,
+                "[CHAVE OCULTADA]"
+            )
 
         current_app.logger.error(
             "Agente de IA: API respondeu %s. Detalhes: %s",
@@ -245,7 +267,8 @@ def consultar_modelo(imagem, tipo, categorias):
             raise ApiError(
                 503,
                 "AGENTE_NAO_CONFIGURADO",
-                "O agente de IA está com a chave de acesso inválida. Avise o administrador."
+                "O agente de IA está com a chave de acesso inválida "
+                "ou sem permissão. Avise o administrador."
             )
 
         raise ApiError(
@@ -274,7 +297,7 @@ def consultar_modelo(imagem, tipo, categorias):
             "Tente de novo ou cadastre manualmente."
         )
 
-    # Procura a resposta da ferramenta.
+    # Procura a resposta da ferramenta de cadastro.
     for bloco in dados.get("content", []):
 
         if (
@@ -283,10 +306,17 @@ def consultar_modelo(imagem, tipo, categorias):
         ):
             return bloco.get("input") or {}
 
+    current_app.logger.warning(
+        "Agente de IA: resposta sem ferramenta de cadastro. "
+        "Motivo de encerramento: %s",
+        dados.get("stop_reason")
+    )
+
     raise ApiError(
         502,
         "AGENTE_RESPOSTA_INVALIDA",
-        "O agente de IA não devolveu um cadastro. Tente outra foto."
+        "O agente de IA não devolveu um cadastro. "
+        "Tente outra foto."
     )
 
 
@@ -348,7 +378,11 @@ def normalizar(saida):
         preco = 0
 
     barras = (
-        re.sub(r"\D", "", saida.get("codigo_barras") or "")
+        re.sub(
+            r"\D",
+            "",
+            saida.get("codigo_barras") or ""
+        )
         if isinstance(saida.get("codigo_barras"), str)
         else ""
     )
@@ -378,6 +412,7 @@ def normalizar(saida):
 
 # ------------------------------------------------------------
 # CADASTRO NO BANCO DE DADOS
+# COMPATÍVEL COM SQLITE E POSTGRESQL
 # ------------------------------------------------------------
 
 def cadastrar(db, campos, usuario_id, quantidade=0):
@@ -385,26 +420,53 @@ def cadastrar(db, campos, usuario_id, quantidade=0):
 
     existente = None
 
+    # Primeiro verifica o código de barras.
     if campos.get("sku"):
         existente = db.execute(
-            "SELECT id, ativo FROM produto WHERE sku = ?",
+            """
+            SELECT id, ativo
+            FROM produto
+            WHERE sku = ?
+            """,
             (campos["sku"],)
         ).fetchone()
 
+    # Depois verifica o nome do produto.
     if existente is None:
 
-        # Casefold permite comparar nomes com acentos.
-        db.create_function(
-            "casefold",
-            1,
-            lambda t: t.casefold() if isinstance(t, str) else t
-        )
+        if hasattr(db, "conn"):
 
-        existente = db.execute(
-            "SELECT id, ativo FROM produto WHERE casefold(nome) = ?",
-            (campos["nome"].casefold(),)
-        ).fetchone()
+            # PostgreSQL / Neon.
+            existente = db.execute(
+                """
+                SELECT id, ativo
+                FROM produto
+                WHERE LOWER(nome) = LOWER(?)
+                """,
+                (campos["nome"],)
+            ).fetchone()
 
+        else:
+
+            # SQLite.
+            db.create_function(
+                "casefold",
+                1,
+                lambda t: t.casefold()
+                if isinstance(t, str)
+                else t
+            )
+
+            existente = db.execute(
+                """
+                SELECT id, ativo
+                FROM produto
+                WHERE casefold(nome) = ?
+                """,
+                (campos["nome"].casefold(),)
+            ).fetchone()
+
+    # Evita cadastrar produtos duplicados.
     if existente is not None:
 
         if not existente["ativo"]:
@@ -415,10 +477,14 @@ def cadastrar(db, campos, usuario_id, quantidade=0):
             )
 
         return (
-            servicos.buscar_produto(db, existente["id"]),
+            servicos.buscar_produto(
+                db,
+                existente["id"]
+            ),
             True
         )
 
+    # Realiza o cadastro utilizando as regras do sistema.
     pid = servicos.criar_produto(
         db,
         {
@@ -444,9 +510,25 @@ def cadastrar(db, campos, usuario_id, quantidade=0):
 def categorias_existentes(db):
     """Retorna as categorias já cadastradas."""
 
+    if hasattr(db, "conn"):
+
+        # PostgreSQL / Neon.
+        consulta = """
+            SELECT nome
+            FROM categoria
+            ORDER BY LOWER(nome)
+        """
+
+    else:
+
+        # SQLite.
+        consulta = """
+            SELECT nome
+            FROM categoria
+            ORDER BY nome COLLATE NOCASE
+        """
+
     return [
         linha["nome"]
-        for linha in db.execute(
-            "SELECT nome FROM categoria ORDER BY nome COLLATE NOCASE"
-        )
+        for linha in db.execute(consulta)
     ]

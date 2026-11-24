@@ -290,7 +290,7 @@ class ModeloDeVisaoTests(ApiBase):
         resp.__enter__.return_value = io.BytesIO(json.dumps(corpo).encode())
         return resp
 
-    def test_envia_imagem_e_forca_o_uso_da_ferramenta(self):
+    def test_envia_imagem_e_permite_o_uso_da_ferramenta(self):
         bloco = {"content": [{"type": "tool_use", "name": "cadastrar_produto", "input": LATA}]}
         with mock.patch("urllib.request.urlopen", return_value=self._resposta(bloco)) as m:
             saida = agente.consultar_modelo(PNG, "image/png", ["Rações"])
@@ -298,7 +298,7 @@ class ModeloDeVisaoTests(ApiBase):
         req = m.call_args.args[0]
         corpo = json.loads(req.data)
         self.assertEqual(req.get_header("X-api-key"), "chave-de-teste")
-        self.assertEqual(corpo["tool_choice"], {"type": "tool", "name": "cadastrar_produto"})
+        self.assertEqual(corpo["tool_choice"], {"type": "auto"})
         self.assertEqual(corpo["messages"][0]["content"][0]["source"]["media_type"], "image/png")
         self.assertIn("Rações", corpo["system"])
 
