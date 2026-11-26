@@ -3,7 +3,7 @@
     --dark: #123c2b;
     --cream: #fbfaf6;
     --ink: #26332b;
-    --muted: #6f756f;
+    --muted: #505950;
     --line: #e5e5de;
     --amber: #f6b93b;
     --red: #d94b4b;
@@ -144,7 +144,7 @@ button {
 
 .brand small {
     display: block;
-    color: #838983;
+    color: #505950;
     font-size: 10px;
     font-weight: 800;
     letter-spacing: .14em;
@@ -233,7 +233,7 @@ button {
 .fine {
     margin: 15px 0 0;
     text-align: center;
-    color: #9a9e99;
+    color: #505950;
     font-size: 11px
 }
 
@@ -255,12 +255,12 @@ button {
 }
 
 .sidebar .brand small {
-    color: #ffffff73
+    color: #dce8df
 }
 
 .menu-label {
     margin: 34px 12px 10px;
-    color: #ffffff55;
+    color: #dce8df;
     font-size: 10px;
     font-weight: 900;
     letter-spacing: .18em
@@ -274,7 +274,7 @@ button {
 .nav button {
     border: 0;
     background: transparent;
-    color: #ffffffb5;
+    color: #e6efe8;
     text-align: left;
     padding: 13px 15px;
     border-radius: 12px;
@@ -308,13 +308,13 @@ button {
 .shop p {
     font-size: 11px;
     line-height: 1.6;
-    color: #ffffff73
+    color: #dce8df
 }
 
 .shop button {
     border: 0;
     background: none;
-    color: #ffffffa6;
+    color: #dce8df;
     padding: 0;
     font-weight: 800
 }
@@ -340,7 +340,7 @@ button {
 
 .topbar small {
     display: block;
-    color: #9a9d98;
+    color: #505950;
     font-weight: 900;
     letter-spacing: .14em
 }
@@ -430,7 +430,7 @@ button {
 }
 
 .stat small {
-    color: #999e98;
+    color: #505950;
     font-weight: 900;
     letter-spacing: .08em
 }
@@ -493,7 +493,7 @@ button {
     transform: translateX(-50%);
     font-size: 9px;
     font-weight: 800;
-    color: #999
+    color: #505950
 }
 
 .alert-row,
@@ -535,7 +535,7 @@ button {
 
 .alert-row small,
 .movement small {
-    color: #969b96
+    color: #505950
 }
 
 .toolbar {
@@ -568,7 +568,7 @@ table {
 th {
     padding: 12px 18px;
     background: #fafaf8;
-    color: #91958f;
+    color: #505950;
     font-size: 10px;
     text-align: left;
     letter-spacing: .08em
@@ -1014,7 +1014,7 @@ td:first-child {
 .link-docs {
     display: block;
     margin-top: 12px;
-    color: #ffffffa6;
+    color: #dce8df;
     font-size: 12px;
     font-weight: 800;
     text-decoration: none
@@ -1048,7 +1048,7 @@ td:first-child {
     display: flex;
     align-items: center;
     gap: 12px;
-    color: #9a9e99;
+    color: #505950;
     font-size: 12px;
     margin: 4px 0 14px
 }
@@ -1150,3 +1150,69 @@ td:first-child {
         align-items: flex-start
     }
 }
+/* ===== Melhorias de acessibilidade - Design de Interacao ===== */
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+    outline: 3px solid #176b4a;
+    outline-offset: 3px;
+}
+
+.sidebar button:focus-visible,
+.sidebar a:focus-visible {
+    outline-color: #ffffff;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: #596158;
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+
+/* Ajuste de contraste do cartao lateral */
+.sidebar .shop {
+    background: #1c4434;
+    border-color: #365747;
+    color: #ffffff;
+}
+
+.sidebar .shop p,
+.sidebar .shop button,
+.sidebar .shop .link-docs {
+    color: #ffffff;
+}
+
+
+/* Contraste dos botoes do menu principal */
+.sidebar .nav button:not(.active) {
+    background: var(--dark);
+    color: #ffffff;
+}
+
+.sidebar .nav button:not(.active):hover {
+    background: #24533e;
+    color: #ffffff;
+}
+
+.sidebar .nav button.active {
+    background: #ffffff;
+    color: var(--green);
+}
+
